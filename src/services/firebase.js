@@ -6,15 +6,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDzeWxQM25lYm2r6DZdLa1PjLaazs8Vcmg",
-  authDomain: "pruebacompartirpiso.firebaseapp.com",
-  projectId: "pruebacompartirpiso",
-  storageBucket: "pruebacompartirpiso.firebasestorage.app",
-  messagingSenderId: "97080498538",
-  appId: "1:97080498538:web:2319072c26fdb6d9ac6d13",
-  measurementId: "G-XMD8ZXEBP4"
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_AUTH_DOMAIN",
+  projectId: "TU_PROJECT_ID",
+  storageBucket: "TU_STORAGE_BUCKET",
+  messagingSenderId: "TU_MESSAGING_SENDER_ID",
+  appId: "TU_APP_ID",
+  measurementId: "TU_MEASUREMENT_ID"
 };
-
 
 const app = initializeApp(firebaseConfig);
 
