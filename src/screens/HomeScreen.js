@@ -1,36 +1,32 @@
 import React, { useContext } from 'react';
 import { View, Text, Button, FlatList } from 'react-native';
 import { UserContext } from '../context/UserContext';
+import { useNavigation } from '@react-navigation/native';
 
 export default function HomeScreen() {
-  const { user, groups, selectGroup } = useContext(UserContext);
-  const currentGroup = user.selectedGroup;
+  const { user, groups } = useContext(UserContext);
+  const navigation = useNavigation();
+  const userGroups = groups.filter(g => g.members.includes(user.uid));
 
   return (
     <View style={{ flex: 1, padding: 16 }}>
-      <Button title="Buscar/Crear grupo" onPress={() => { /* navegar */ }} />
+      <Button
+        title="Buscar/Unirse a un grupo"
+        onPress={() => navigation.navigate('BuscarGrupo')}
+      />
+      <Button
+        title="Crear grupo familiar"
+        onPress={() => navigation.navigate('CrearGrupo')}
+      />
+
+      <Text style={{ marginTop: 24, fontWeight: 'bold' }}>Mis grupos:</Text>
       <FlatList
-        data={groups}
+        data={userGroups}
         keyExtractor={g => g.id}
         renderItem={({ item }) => (
-          <Button
-            title={item.name}
-            onPress={() => selectGroup(item.id)}
-          />
+          <Text>{item.name}</Text>
         )}
       />
-      {currentGroup && (
-        <View style={{ marginTop: 24 }}>
-          <Text>Integrantes de {currentGroup.name}:</Text>
-          <FlatList
-            data={currentGroup.members}
-            keyExtractor={m => m.id}
-            renderItem={({ item }) => (
-              <Text>{item.name} - {item.status}</Text>
-            )}
-          />
-        </View>
-      )}
     </View>
   );
 }
