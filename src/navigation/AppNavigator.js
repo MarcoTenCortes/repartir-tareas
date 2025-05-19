@@ -1,7 +1,12 @@
+// src/navigation/AppNavigator.js
 import React, { useContext } from 'react';
+import { View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+
+import AppHeader from '../components/AppHeader';
 import HomeScreen from '../screens/HomeScreen';
 import TasksScreen from '../screens/TasksScreen';
 import ShoppingScreen from '../screens/ShoppingScreen';
@@ -17,12 +22,37 @@ const Tab = createBottomTabNavigator();
 
 function MainTabs() {
   return (
-    <Tab.Navigator initialRouteName="Home">
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Tareas" component={TasksScreen} />
-      <Tab.Screen name="Compra" component={ShoppingScreen} />
-      <Tab.Screen name="Recordatorios" component={RemindersScreen} />
-    </Tab.Navigator>
+    <View style={{ flex: 1 }}>
+      <AppHeader />
+      <Tab.Navigator
+        initialRouteName="Home"
+        screenOptions={({ route }) => ({
+          tabBarIcon: ({ color, size }) => {
+            let iconName = 'ellipse-outline';
+            if (route.name === 'Home') iconName = 'home-outline';
+            if (route.name === 'Tareas') iconName = 'checkmark-done-outline';
+            if (route.name === 'Compra') iconName = 'cart-outline';
+            if (route.name === 'Recordatorios') iconName = 'alarm-outline';
+            return (
+              <Ionicons
+                name={iconName}
+                size={size}
+                color={color}
+                style={{ marginBottom: -6 }}
+              />
+            );
+          },
+          tabBarLabelStyle: { paddingBottom: 4 },
+          tabBarStyle: { height: 60 },
+          headerShown: false
+        })}
+      >
+        <Tab.Screen name="Home" component={HomeScreen} />
+        <Tab.Screen name="Tareas" component={TasksScreen} />
+        <Tab.Screen name="Compra" component={ShoppingScreen} />
+        <Tab.Screen name="Recordatorios" component={RemindersScreen} />
+      </Tab.Navigator>
+    </View>
   );
 }
 
@@ -31,14 +61,10 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
         {user ? (
-          <>            
-            <Stack.Screen
-              name="Main"
-              component={MainTabs}
-              options={{ headerShown: false }}
-            />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="BuscarGrupo" component={GroupSearchScreen} />
             <Stack.Screen name="CrearGrupo" component={GroupCreateScreen} />
           </>

@@ -1,12 +1,14 @@
+// src/screens/HomeScreen.js
 import React, { useContext } from 'react';
-import { View, Text, Button, FlatList } from 'react-native';
+import { View, Text, Button, FlatList, TouchableOpacity } from 'react-native';
 import { UserContext } from '../context/UserContext';
+import { GroupContext } from '../context/GroupContext';
 import { useNavigation } from '@react-navigation/native';
 
 export default function HomeScreen() {
-  const { user, groups } = useContext(UserContext);
+  const { user } = useContext(UserContext);
+  const { userGroups, currentGroup, setCurrentGroup } = useContext(GroupContext);
   const navigation = useNavigation();
-  const userGroups = groups.filter(g => g.members.includes(user.uid));
 
   return (
     <View style={{ flex: 1, padding: 16 }}>
@@ -24,7 +26,15 @@ export default function HomeScreen() {
         data={userGroups}
         keyExtractor={g => g.id}
         renderItem={({ item }) => (
-          <Text>{item.name}</Text>
+          <TouchableOpacity onPress={() => setCurrentGroup(item)}>
+            <Text style={{ 
+                padding: 8,
+                fontWeight: item.id === currentGroup?.id ? 'bold' : 'normal'
+              }}
+            >
+              {item.name}
+            </Text>
+          </TouchableOpacity>
         )}
       />
     </View>
