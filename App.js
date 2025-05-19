@@ -1,11 +1,23 @@
+// App.js
 import React from 'react';
-import AppNavigator from './src/navigation/AppNavigator';
+import { LogBox } from 'react-native';
 import { UserProvider } from './src/context/UserContext';
+import { GroupProvider } from './src/context/GroupContext';
+import AppNavigator from './src/navigation/AppNavigator';
+
+// Ocultamos warnings irrelevantes
+LogBox.ignoreLogs([
+  'WebChannelConnection RPC',
+  'expo-notifications',
+  'ReferenceError: Property \'user\''
+]);
 
 export default function App() {
   return (
     <UserProvider>
-      <AppNavigator />
+      <GroupProvider>
+        <AppNavigator />
+      </GroupProvider>
     </UserProvider>
   );
 }
