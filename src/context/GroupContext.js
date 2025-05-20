@@ -1,14 +1,14 @@
 // src/context/GroupContext.js
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { UserContext } from './UserContext';
-import { auth, db } from '../services/firebase'; // auth importado
+import { auth, db } from '../services/firebase';
 import {
   collection,
   addDoc,
   onSnapshot,
   doc,
   updateDoc,
-  deleteDoc, // Asegúrate que deleteDoc esté importado
+  deleteDoc,
   arrayUnion,
   Timestamp,
   serverTimestamp,
@@ -16,8 +16,8 @@ import {
   where,
   orderBy,
   getDoc,
-  getDocs,     // <--- Importar getDocs para leer múltiples documentos
-  writeBatch,  // <--- Importar writeBatch para actualizaciones en lote
+  getDocs,
+  writeBatch,
 } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -28,15 +28,12 @@ export function GroupProvider({ children }) {
   const { user } = useContext(UserContext);
   const { groups: userGroupsFromUserContext } = useContext(UserContext);
   const [currentGroup, setCurrentGroup] = useState(null);
-  // ... (otros estados: rooms, shoppingList, reminders, joinRequests, payments)
-  const [rooms, setRooms] = useState([]);
+  const [tasks, setTasks] = useState([]); // <--- NUEVO ESTADO PARA TAREAS
   const [shoppingList, setShoppingList] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [joinRequests, setJoinRequests] = useState([]);
   const [payments, setPayments] = useState([]);
 
-
-  // ... (useEffect para seleccionar currentGroup y listeners existentes)
   useEffect(() => {
     if (userGroupsFromUserContext.length > 0) {
       if (!currentGroup || !userGroupsFromUserContext.some(g => g.id === currentGroup.id)) {
@@ -49,7 +46,7 @@ export function GroupProvider({ children }) {
 
   useEffect(() => {
     if (!currentGroup) {
-      setRooms([]);
+      setTasks([]); // Limpiar tareas si no hay grupo
       setShoppingList([]);
       setReminders([]);
       setJoinRequests([]);
@@ -57,11 +54,14 @@ export function GroupProvider({ children }) {
       return () => {};
     }
 
-    const roomsCol = collection(db, 'groups', currentGroup.id, 'rooms');
-    const unsubRooms = onSnapshot(roomsCol, snap =>
-      setRooms(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    );
+    // Listener para TAREAS
+    const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
+    const tasksQuery = query(tasksColRef, orderBy('createdAt', 'desc'));
+    const unsubTasks = onSnapshot(tasksQuery, snap => {
+      setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
 
+    // ... (listeners existentes para shopping, reminders, joinRequests, payments sin cambios) ...
     const shopCol = collection(db, 'groups', currentGroup.id, 'shopping');
     const unsubShop = onSnapshot(shopCol, snap =>
       setShoppingList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
@@ -129,8 +129,9 @@ export function GroupProvider({ children }) {
       setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
+
     return () => {
-      unsubRooms();
+      unsubTasks(); // Desuscribirse del listener de tareas
       unsubShop();
       unsubRem();
       unsubJoinRequests();
@@ -138,7 +139,59 @@ export function GroupProvider({ children }) {
     };
   }, [currentGroup, user]);
 
+  // --- NUEVAS FUNCIONES PARA TAREAS ---
+  const createTask = async (taskName) => {
+    if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
+    if (!taskName.trim()) throw new Error("El nombre de la tarea no puede estar vacío.");
 
+    const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
+    await addDoc(tasksColRef, {
+      name: taskName.trim(),
+      assignedTo: null, // UID del usuario asignado
+      assignedToName: null, // Nombre del usuario asignado para mostrar
+      createdAt: serverTimestamp(),
+      createdBy: user.uid, // UID del creador de la tarea
+      createdByName: user.name || user.email || "Usuario Desconocido", // Nombre del creador
+    });
+  };
+
+  const assignTaskToUser = async (taskId, userIdToAssign, userNameToAssign) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!taskId || !userIdToAssign || !userNameToAssign) {
+      throw new Error("Información incompleta para asignar la tarea.");
+    }
+
+    const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
+    await updateDoc(taskDocRef, {
+      assignedTo: userIdToAssign,
+      assignedToName: userNameToAssign,
+      assignedAt: serverTimestamp(), // Opcional: guardar cuándo se asignó
+    });
+  };
+
+  const unassignTask = async (taskId) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!taskId) throw new Error("ID de tarea no proporcionado.");
+
+    const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
+    await updateDoc(taskDocRef, {
+      assignedTo: null,
+      assignedToName: null,
+      assignedAt: null // Opcional: limpiar o quitar el campo
+    });
+  };
+
+  const deleteTask = async (taskId) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!taskId) throw new Error("ID de tarea no proporcionado.");
+
+    const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
+    await deleteDoc(taskDocRef);
+  };
+  // --- FIN NUEVAS FUNCIONES PARA TAREAS ---
+
+
+  // ... (resto de funciones existentes: approveJoinRequest, addPayment, etc. sin cambios)
   const approveJoinRequest = async (groupId, requestingUserId) => {
     if (!user || !currentGroup || currentGroup.id !== groupId || currentGroup.owner !== user.uid) {
         throw new Error("Operación no permitida o grupo incorrecto.");
@@ -147,20 +200,17 @@ export function GroupProvider({ children }) {
     const requestDocRef = doc(db, 'groups', groupId, 'joinRequests', requestingUserId);
 
     try {
-      // 1. Obtener el nombre del nuevo miembro
-      let newMemberName = "Nuevo Miembro"; // Fallback
+      let newMemberName = "Nuevo Miembro"; 
       const userDocSnap = await getDoc(doc(db, 'users', requestingUserId));
       if (userDocSnap.exists() && userDocSnap.data().displayName) {
         newMemberName = userDocSnap.data().displayName;
       } else {
-        // Si no está en la colección 'users', intentar con la info de la solicitud
         const requestSnap = await getDoc(requestDocRef);
         if (requestSnap.exists() && requestSnap.data().requestingUserName) {
             newMemberName = requestSnap.data().requestingUserName;
         }
       }
 
-      // 2. Actualizar el documento del grupo y la solicitud
       await updateDoc(groupDocRef, { members: arrayUnion(requestingUserId) });
       await updateDoc(requestDocRef, {
         status: 'approved',
@@ -168,7 +218,6 @@ export function GroupProvider({ children }) {
         approvedAt: Timestamp.now()
       });
 
-      // 3. Actualizar todos los pagos existentes en este grupo
       const paymentsQuery = query(collection(db, 'groups', groupId, 'payments'));
       const paymentsSnapshot = await getDocs(paymentsQuery);
       
@@ -176,10 +225,8 @@ export function GroupProvider({ children }) {
         const batch = writeBatch(db);
         paymentsSnapshot.forEach(paymentDoc => {
           const paymentData = paymentDoc.data();
-          // Asegurarse de que `payers` exista y sea un objeto
           const currentPayers = paymentData.payers && typeof paymentData.payers === 'object' ? paymentData.payers : {};
           
-          // Añadir el nuevo miembro solo si no existe ya (poco probable aquí pero buena práctica)
           if (!currentPayers[requestingUserId]) {
             const updatedPayers = {
               ...currentPayers,
@@ -203,22 +250,12 @@ export function GroupProvider({ children }) {
   };
 
   const addPayment = async (description, amount = null) => {
-    // ... (lógica de addPayment sin cambios significativos aquí,
-    // ya que se enfoca en cómo obtener nombres al crear un NUEVO pago)
-    // Lo importante es que esta función ya crea el mapa `payers` correctamente
-    // con los miembros actuales en el momento de la creación del pago.
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!description.trim()) throw new Error("La descripción del pago no puede estar vacía.");
 
     const initialPayers = {};
-    
-    // Obtener la lista de miembros actualizada del 'currentGroup' que ya debería
-    // reflejar al nuevo miembro si esta función se llama DESPUÉS de approveJoinRequest
-    // y el estado 'currentGroup' se ha actualizado (lo cual onSnapshot debería hacer).
-    // O, para mayor seguridad, obtener la lista de miembros directamente del documento del grupo.
     const groupDocSnap = await getDoc(doc(db, 'groups', currentGroup.id));
     const membersForPayment = groupDocSnap.exists() ? groupDocSnap.data().members : currentGroup.members;
-
 
     if (membersForPayment && membersForPayment.length > 0) {
       for (const memberUid of membersForPayment) {
@@ -257,21 +294,19 @@ export function GroupProvider({ children }) {
     }
   };
 
-  const deletePayment = async (paymentId) => { // Nueva función para eliminar un pago
+  const deletePayment = async (paymentId) => {
     if (!currentGroup || !paymentId) {
       throw new Error("Información insuficiente para eliminar el pago.");
     }
     try {
       const paymentDocRef = doc(db, 'groups', currentGroup.id, 'payments', paymentId);
       await deleteDoc(paymentDocRef);
-      // El estado local 'payments' se actualizará a través del listener onSnapshot.
     } catch (error) {
       console.error("Error eliminando pago:", error);
       throw error;
     }
   };
-
-  // ... (resto de funciones: toggleMemberPaymentStatus, rejectJoinRequest, addReminder, etc.)
+  
   const toggleMemberPaymentStatus = async (paymentId, memberUidToToggle) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     const paymentDocRef = doc(db, 'groups', currentGroup.id, 'payments', paymentId);
@@ -336,9 +371,6 @@ export function GroupProvider({ children }) {
       throw error;
     }
   };
-
-  const createRoom = async name => { console.warn('createRoom no implementado', name); };
-  const addTask = async (roomId, text, assignee) => { console.warn('addTask no implementado', roomId, text, assignee); };
   
   const addShoppingItem = async (itemText) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado para añadir a la compra.");
@@ -380,6 +412,8 @@ export function GroupProvider({ children }) {
     }
   };
 
+  // Quitar createRoom y addTask si no se usan para tareas, o redefinirlas.
+  // Las nuevas funciones de tareas las reemplazarán.
 
   return (
     <GroupContext.Provider
@@ -387,13 +421,15 @@ export function GroupProvider({ children }) {
         userGroups: userGroupsFromUserContext,
         currentGroup,
         setCurrentGroup,
-        rooms,
+        tasks, // <--- Exponer nuevo estado
         shoppingList,
         reminders,
         joinRequests,
         payments,
-        createRoom,
-        addTask,
+        createTask, // <--- Exponer nueva función
+        assignTaskToUser, // <--- Exponer nueva función
+        unassignTask, // <--- Exponer nueva función
+        deleteTask, // <--- Exponer nueva función
         addReminder,
         addShoppingItem,
         toggleBought,
@@ -402,7 +438,7 @@ export function GroupProvider({ children }) {
         rejectJoinRequest,
         addPayment,
         toggleMemberPaymentStatus,
-        deletePayment, // <--- Exponer deletePayment
+        deletePayment,
       }}
     >
       {children}
