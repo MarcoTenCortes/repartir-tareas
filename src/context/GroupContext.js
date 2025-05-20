@@ -20,10 +20,14 @@ export function GroupProvider({ children }) {
   const [shoppingList, setShoppingList] = useState([]);
   const [reminders, setReminders] = useState([]);
 
-  // Cuando cargan los grupos del usuario, selecciona el primero si no hay ninguno
+  // Ajusta currentGroup cuando cambian los grupos del usuario
   useEffect(() => {
-    if (userGroups.length > 0 && !currentGroup) {
-      setCurrentGroup(userGroups[0]);
+    if (userGroups.length > 0) {
+      if (!currentGroup || !userGroups.some(g => g.id === currentGroup.id)) {
+        setCurrentGroup(userGroups[0]);
+      }
+    } else {
+      setCurrentGroup(null);
     }
   }, [userGroups]);
 
@@ -53,7 +57,6 @@ export function GroupProvider({ children }) {
             content: { title: 'Recordatorio', body: item.text },
             trigger: item.date.toDate()
           });
-          // y marca como notificado
           updateDoc(
             doc(db, 'groups', currentGroup.id, 'reminders', item.id),
             { notified: true }
@@ -70,45 +73,11 @@ export function GroupProvider({ children }) {
   }, [currentGroup]);
 
   // Funciones para mutaciones
-  const createRoom = async name => {
-    if (!currentGroup) throw new Error('Selecciona primero un grupo');
-    await addDoc(
-      collection(db, 'groups', currentGroup.id, 'rooms'),
-      { name, tasks: [] }
-    );
-  };
-
-  const addTask = async (roomId, text, assignee) => {
-    if (!currentGroup) throw new Error('Selecciona primero un grupo');
-    const roomRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
-    await updateDoc(roomRef, {
-      tasks: arrayUnion({ id: Date.now().toString(), text, assignee })
-    });
-  };
-
-  const addReminder = async (text, date) => {
-    if (!currentGroup) throw new Error('Selecciona primero un grupo');
-    await addDoc(
-      collection(db, 'groups', currentGroup.id, 'reminders'),
-      { text, date, notified: false }
-    );
-  };
-
-  const addShoppingItem = async text => {
-    if (!currentGroup) throw new Error('Selecciona primero un grupo');
-    await addDoc(
-      collection(db, 'groups', currentGroup.id, 'shopping'),
-      { text, bought: false }
-    );
-  };
-
-  const toggleBought = async (itemId, bought) => {
-    if (!currentGroup) throw new Error('Selecciona primero un grupo');
-    await updateDoc(
-      doc(db, 'groups', currentGroup.id, 'shopping', itemId),
-      { bought }
-    );
-  };
+  const createRoom = async name => { /* ... */ };
+  const addTask = async (roomId, text, assignee) => { /* ... */ };
+  const addReminder = async (text, date) => { /* ... */ };
+  const addShoppingItem = async text => { /* ... */ };
+  const toggleBought = async (itemId, bought) => { /* ... */ };
 
   return (
     <GroupContext.Provider

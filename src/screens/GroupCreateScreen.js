@@ -35,6 +35,6 @@ export default function GroupCreateScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
+  container: { flex: 1, padding: 16, marginTop: 70 },
   input: { borderWidth: 1, borderColor: '#ccc', padding: 8, marginBottom: 8 }
 });
