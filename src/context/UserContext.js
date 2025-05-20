@@ -1,4 +1,4 @@
-// === src/context/UserContext.js ===
+// src/context/UserContext.js
 import React, { createContext, useState, useEffect } from 'react';
 import { auth, db } from '../services/firebase';
 import {
@@ -26,16 +26,19 @@ export function UserProvider({ children }) {
   const [user, setUser] = useState(null);
   const [groups, setGroups] = useState([]);
 
-  // Sync auth state and fetch groups
+  // Sync auth state and fetch only the groups where the user is a member
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
       if (u) {
         setUser({ uid: u.uid, name: u.displayName });
-        // subscribe to all groups
-        const groupsCol = collection(db, 'groups');
-        const unsubGroups = onSnapshot(groupsCol, snap => {
-          const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-          setGroups(all);
+        // Trae sólo los grupos donde mi UID está en `members`
+        const groupsQuery = query(
+          collection(db, 'groups'),
+          where('members', 'array-contains', u.uid)
+        );
+        const unsubGroups = onSnapshot(groupsQuery, snap => {
+          const myGroups = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          setGroups(myGroups);
         });
         return () => unsubGroups();
       } else {
@@ -46,7 +49,7 @@ export function UserProvider({ children }) {
     return () => unsubscribeAuth();
   }, []);
 
-  // Authentication
+  // Authentication methods
   const register = async (name, email, password) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(cred.user, { displayName: name });
@@ -77,7 +80,10 @@ export function UserProvider({ children }) {
   };
 
   const getGroupByName = async (name) => {
-    const q = query(collection(db, 'groups'), where('name', '==', name));
+    const q = query(
+      collection(db, 'groups'),
+      where('name', '==', name)
+    );
     const snap = await getDocs(q);
     return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   };
@@ -97,4 +103,3 @@ export function UserProvider({ children }) {
     </UserContext.Provider>
   );
 }
-
