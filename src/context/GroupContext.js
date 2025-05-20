@@ -1,4 +1,4 @@
-// src/context/GroupContext.js
+// FILE: src/context/GroupContext.js
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { UserContext } from './UserContext';
 import { auth, db } from '../services/firebase';
@@ -17,7 +17,7 @@ import {
   orderBy,
   getDoc,
   getDocs,
-  writeBatch,
+  writeBatch, // Para operaciones por lotes
 } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -33,7 +33,7 @@ export function GroupProvider({ children }) {
   const [reminders, setReminders] = useState([]);
   const [joinRequests, setJoinRequests] = useState([]);
   const [payments, setPayments] = useState([]);
-  const [rooms, setRooms] = useState([]); // <--- NUEVO ESTADO PARA HABITACIONES
+  const [rooms, setRooms] = useState([]);
 
   useEffect(() => {
     if (userGroupsFromUserContext.length > 0) {
@@ -52,25 +52,23 @@ export function GroupProvider({ children }) {
       setReminders([]);
       setJoinRequests([]);
       setPayments([]);
-      setRooms([]); // <--- Limpiar habitaciones si no hay grupo
+      setRooms([]);
       return () => {};
     }
 
-    // Listener para TAREAS
     const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
     const tasksQueryRef = query(tasksColRef, orderBy('createdAt', 'desc'));
     const unsubTasks = onSnapshot(tasksQueryRef, snap => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-    // Listener para HABITACIONES
     const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
-    const roomsQueryRef = query(roomsColRef, orderBy('createdAt', 'asc')); // O por nombre, según preferencia
+    const roomsQueryRef = query(roomsColRef, orderBy('createdAt', 'asc'));
     const unsubRooms = onSnapshot(roomsQueryRef, snap => {
       setRooms(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-
-    // ... (listeners existentes para shopping, reminders, joinRequests, payments sin cambios) ...
+    
+    // ... (otros listeners existentes sin cambios)
     const shopCol = collection(db, 'groups', currentGroup.id, 'shopping');
     const unsubShop = onSnapshot(shopCol, snap =>
       setShoppingList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
@@ -138,9 +136,10 @@ export function GroupProvider({ children }) {
       setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
+
     return () => {
       unsubTasks();
-      unsubRooms(); // <--- Desuscribirse del listener de habitaciones
+      unsubRooms();
       unsubShop();
       unsubRem();
       unsubJoinRequests();
@@ -148,16 +147,15 @@ export function GroupProvider({ children }) {
     };
   }, [currentGroup, user]);
 
-  // --- FUNCIONES PARA TAREAS (createTask MODIFICADA) ---
-  const createTask = async (taskName, roomId) => { // <--- roomId AÑADIDO
+  const createTask = async (taskName, roomId) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!taskName.trim()) throw new Error("El nombre de la tarea no puede estar vacío.");
-    if (!roomId) throw new Error("Es necesario especificar una habitación para la tarea."); // <--- VALIDACIÓN
+    if (!roomId) throw new Error("Es necesario especificar una habitación para la tarea.");
 
     const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
     await addDoc(tasksColRef, {
       name: taskName.trim(),
-      roomId: roomId, // <--- CAMPO roomId AÑADIDO
+      roomId: roomId,
       assignedTo: null,
       assignedToName: null,
       createdAt: serverTimestamp(),
@@ -197,7 +195,6 @@ export function GroupProvider({ children }) {
     await deleteDoc(taskDocRef);
   };
 
-  // --- NUEVAS FUNCIONES PARA HABITACIONES ---
   const createRoom = async (roomName, initialPosition = { x: 50, y: 50 }) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!roomName.trim()) throw new Error("El nombre de la habitación no puede estar vacío.");
@@ -205,7 +202,11 @@ export function GroupProvider({ children }) {
     const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
     await addDoc(roomsColRef, {
       name: roomName.trim(),
-      position: initialPosition, // { x: number, y: number }
+      position: initialPosition,
+      shape: 'rectangle', 
+      width: 100, // Default width
+      height: 60,  // Default height
+      rotation: 0, // Default rotation
       createdAt: serverTimestamp(),
       createdBy: user.uid,
     });
@@ -214,15 +215,45 @@ export function GroupProvider({ children }) {
   const updateRoomPosition = async (roomId, newPosition) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!roomId || !newPosition) throw new Error("Información incompleta para actualizar la posición.");
-
     const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
     await updateDoc(roomDocRef, {
       position: newPosition,
     });
   };
-  // --- FIN NUEVAS FUNCIONES PARA HABITACIONES ---
 
-  // ... (resto de funciones existentes: approveJoinRequest, addPayment, etc. sin cambios)
+  // Genérica para forma, tamaño, rotación
+  const updateRoomProperties = async (roomId, properties) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!roomId || !properties) throw new Error("Información incompleta para actualizar propiedades.");
+    const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
+    await updateDoc(roomDocRef, properties); // properties es un objeto { shape: 'newShape', width: newW, ... }
+  };
+  
+  const deleteRoom = async (roomId) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!roomId) throw new Error("ID de habitación no proporcionado.");
+  
+    const batch = writeBatch(db);
+  
+    // 1. Referencia al documento de la habitación a eliminar
+    const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
+    batch.delete(roomDocRef);
+  
+    // 2. Buscar tareas asociadas y actualizar su roomId a null
+    const tasksQuery = query(
+      collection(db, 'groups', currentGroup.id, 'tasks'),
+      where('roomId', '==', roomId)
+    );
+    const tasksSnapshot = await getDocs(tasksQuery);
+    tasksSnapshot.forEach(taskDoc => {
+      batch.update(taskDoc.ref, { roomId: null });
+    });
+  
+    // Ejecutar todas las operaciones en lote
+    await batch.commit();
+  };
+
+  // ... (resto de funciones como approveJoinRequest, addPayment, etc. sin cambios)
   const approveJoinRequest = async (groupId, requestingUserId) => {
     if (!user || !currentGroup || currentGroup.id !== groupId || currentGroup.owner !== user.uid) {
         throw new Error("Operación no permitida o grupo incorrecto.");
@@ -253,7 +284,7 @@ export function GroupProvider({ children }) {
       const paymentsSnapshot = await getDocs(paymentsQuery);
       
       if (!paymentsSnapshot.empty) {
-        const batch = writeBatch(db);
+        const paymentBatch = writeBatch(db); // Renombrar para evitar confusión con el batch de deleteRoom si estuviera en el mismo scope
         paymentsSnapshot.forEach(paymentDoc => {
           const paymentData = paymentDoc.data();
           const currentPayers = paymentData.payers && typeof paymentData.payers === 'object' ? paymentData.payers : {};
@@ -267,10 +298,10 @@ export function GroupProvider({ children }) {
                 userName: newMemberName
               }
             };
-            batch.update(paymentDoc.ref, { payers: updatedPayers });
+            paymentBatch.update(paymentDoc.ref, { payers: updatedPayers });
           }
         });
-        await batch.commit();
+        await paymentBatch.commit();
         console.log("Pagos existentes actualizados con el nuevo miembro.");
       }
 
@@ -346,7 +377,11 @@ export function GroupProvider({ children }) {
       if (!paymentSnap.exists()) throw new Error("El pago no existe.");
       const paymentData = paymentSnap.data();
       const currentPayerData = paymentData.payers[memberUidToToggle];
+      // Modificado: Permitir que el creador del pago o el admin del grupo puedan marcar/desmarcar pagos de otros.
+      // Necesitaríamos la info del owner del grupo aquí, o una lógica de roles más compleja.
+      // Por simplicidad, mantenemos que solo el propio usuario puede cambiar su estado.
       if (user.uid !== memberUidToToggle) {
+          // Esta lógica puede cambiar si el admin/creador del pago debe poder modificar.
           throw new Error("Solo puedes marcar/desmarcar tu propio estado de pago.");
       }
       if (!currentPayerData) throw new Error("No estás en la lista de pagadores de este pago.");
@@ -443,6 +478,7 @@ export function GroupProvider({ children }) {
     }
   };
 
+
   return (
     <GroupContext.Provider
       value={{
@@ -454,13 +490,15 @@ export function GroupProvider({ children }) {
         reminders,
         joinRequests,
         payments,
-        rooms, // <--- Exponer estado de habitaciones
-        createTask, // (Ya modificada y expuesta)
+        rooms,
+        createTask,
         assignTaskToUser,
         unassignTask,
         deleteTask,
-        createRoom, // <--- Exponer nueva función
-        updateRoomPosition, // <--- Exponer nueva función
+        createRoom,
+        updateRoomPosition,
+        updateRoomProperties, // Para shape, size, rotation
+        deleteRoom,           // Para eliminar habitación
         addReminder,
         addShoppingItem,
         toggleBought,
