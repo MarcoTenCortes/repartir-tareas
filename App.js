@@ -3,9 +3,9 @@ import React from 'react';
 import { LogBox } from 'react-native';
 import { UserProvider } from './src/context/UserContext';
 import { GroupProvider } from './src/context/GroupContext';
+import { ThemeProvider } from './src/context/ThemeContext'; // Importa ThemeProvider
 import AppNavigator from './src/navigation/AppNavigator';
 
-// Ocultamos warnings irrelevantes
 LogBox.ignoreLogs([
   'WebChannelConnection RPC',
   'expo-notifications',
@@ -16,7 +16,9 @@ export default function App() {
   return (
     <UserProvider>
       <GroupProvider>
-        <AppNavigator />
+        <ThemeProvider> {/* Envuelve AppNavigator con ThemeProvider */}
+          <AppNavigator />
+        </ThemeProvider>
       </GroupProvider>
     </UserProvider>
   );
