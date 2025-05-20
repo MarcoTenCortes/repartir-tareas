@@ -1,23 +1,44 @@
+// src/screens/GroupSearchScreen.js
 import React, { useState, useContext } from 'react';
-import { View, TextInput, Button, FlatList, Text, StyleSheet, Alert } from 'react-native';
+import { View, TextInput, Button, FlatList, Text, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { UserContext } from '../context/UserContext';
 
-export default function GroupSearchScreen() {
+export default function GroupSearchScreen({ navigation }) { // Añadir navigation
   const [queryText, setQueryText] = useState('');
   const [results, setResults] = useState([]);
-  const { getGroupByName, joinGroup } = useContext(UserContext);
+  const { getGroupByName, joinGroup, user, groups: userGroups } = useContext(UserContext); // user y userGroups para verificar membresía
 
   const handleSearch = async () => {
-    const groups = await getGroupByName(queryText.trim());
-    setResults(groups);
+    if (!queryText.trim()) {
+        Alert.alert('Error', 'Introduce un nombre de grupo para buscar.');
+        return;
+    }
+    try {
+        const groupsFound = await getGroupByName(queryText.trim());
+        setResults(groupsFound);
+        if (groupsFound.length === 0) {
+            Alert.alert('Sin resultados', 'No se encontraron grupos con ese nombre.');
+        }
+    } catch(error) {
+        Alert.alert('Error de búsqueda', error.message);
+    }
   };
 
-  const handleJoin = async (groupId) => {
+  const handleJoin = async (groupId, groupName) => { // Recibir también groupName
     try {
-      await joinGroup(groupId);
-      Alert.alert('Éxito', 'Te has unido al grupo');
+      // Verificar si el usuario ya es miembro
+      const isAlreadyMember = userGroups.some(g => g.id === groupId);
+      if (isAlreadyMember) {
+        Alert.alert('Información', 'Ya eres miembro de este grupo.');
+        return;
+      }
+
+      await joinGroup(groupId, groupName); // Pasar groupName a joinGroup
+      Alert.alert('Solicitud enviada', 'Tu solicitud para unirte al grupo ha sido enviada.');
+      // Podrías navegar hacia atrás o limpiar resultados
+      // navigation.goBack(); 
     } catch (err) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error al solicitar unirse', err.message);
     }
   };
 
@@ -28,25 +49,43 @@ export default function GroupSearchScreen() {
         placeholder="Nombre de grupo"
         value={queryText}
         onChangeText={setQueryText}
+        onSubmitEditing={handleSearch} // Para buscar al presionar enter en teclado
       />
-      <Button title="Buscar" onPress={handleSearch} />
+      <Button title="Buscar Grupo" onPress={handleSearch} />
       <FlatList
         data={results}
         keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <View style={styles.item}>
-            <Text style={styles.name}>{item.name}</Text>
-            <Button title="Unirse" onPress={() => handleJoin(item.id)} />
-          </View>
-        )}
+        renderItem={({ item }) => {
+            const isAlreadyMember = userGroups.some(g => g.id === item.id);
+            return (
+                <View style={styles.item}>
+                    <Text style={styles.name}>{item.name}</Text>
+                    {!isAlreadyMember ? (
+                        <Button title="Solicitar Unirse" onPress={() => handleJoin(item.id, item.name)} />
+                    ) : (
+                        <Text style={styles.memberText}>Ya eres miembro</Text>
+                    )}
+                </View>
+            );
+        }}
+        ListEmptyComponent={<Text style={styles.emptyText}>Introduce un nombre para buscar grupos.</Text>}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  input: { borderWidth: 1, borderColor: '#ccc', padding: 8, marginBottom: 8 },
-  item: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
-  name: { fontSize: 16 }
+  container: { flex: 1, padding: 16, marginTop: 50 }, // Ajustar marginTop si es necesario
+  input: { borderWidth: 1, borderColor: '#ccc', padding: 10, marginBottom: 12, borderRadius: 5 },
+  item: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee'
+  },
+  name: { fontSize: 16, flex: 1 },
+  memberText: { color: 'green', fontStyle: 'italic' },
+  emptyText: { textAlign: 'center', marginTop: 20, color: '#888' }
 });
