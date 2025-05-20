@@ -28,11 +28,12 @@ export function GroupProvider({ children }) {
   const { user } = useContext(UserContext);
   const { groups: userGroupsFromUserContext } = useContext(UserContext);
   const [currentGroup, setCurrentGroup] = useState(null);
-  const [tasks, setTasks] = useState([]); // <--- NUEVO ESTADO PARA TAREAS
+  const [tasks, setTasks] = useState([]);
   const [shoppingList, setShoppingList] = useState([]);
   const [reminders, setReminders] = useState([]);
   const [joinRequests, setJoinRequests] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [rooms, setRooms] = useState([]); // <--- NUEVO ESTADO PARA HABITACIONES
 
   useEffect(() => {
     if (userGroupsFromUserContext.length > 0) {
@@ -46,19 +47,27 @@ export function GroupProvider({ children }) {
 
   useEffect(() => {
     if (!currentGroup) {
-      setTasks([]); // Limpiar tareas si no hay grupo
+      setTasks([]);
       setShoppingList([]);
       setReminders([]);
       setJoinRequests([]);
       setPayments([]);
+      setRooms([]); // <--- Limpiar habitaciones si no hay grupo
       return () => {};
     }
 
     // Listener para TAREAS
     const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
-    const tasksQuery = query(tasksColRef, orderBy('createdAt', 'desc'));
-    const unsubTasks = onSnapshot(tasksQuery, snap => {
+    const tasksQueryRef = query(tasksColRef, orderBy('createdAt', 'desc'));
+    const unsubTasks = onSnapshot(tasksQueryRef, snap => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+
+    // Listener para HABITACIONES
+    const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
+    const roomsQueryRef = query(roomsColRef, orderBy('createdAt', 'asc')); // O por nombre, según preferencia
+    const unsubRooms = onSnapshot(roomsQueryRef, snap => {
+      setRooms(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
     // ... (listeners existentes para shopping, reminders, joinRequests, payments sin cambios) ...
@@ -124,14 +133,14 @@ export function GroupProvider({ children }) {
     }
 
     const paymentsCol = collection(db, 'groups', currentGroup.id, 'payments');
-    const paymentsQuery = query(paymentsCol, orderBy('createdAt', 'desc')); 
-    const unsubPayments = onSnapshot(paymentsQuery, snap => {
+    const paymentsQueryRef = query(paymentsCol, orderBy('createdAt', 'desc')); 
+    const unsubPayments = onSnapshot(paymentsQueryRef, snap => {
       setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
 
-
     return () => {
-      unsubTasks(); // Desuscribirse del listener de tareas
+      unsubTasks();
+      unsubRooms(); // <--- Desuscribirse del listener de habitaciones
       unsubShop();
       unsubRem();
       unsubJoinRequests();
@@ -139,19 +148,21 @@ export function GroupProvider({ children }) {
     };
   }, [currentGroup, user]);
 
-  // --- NUEVAS FUNCIONES PARA TAREAS ---
-  const createTask = async (taskName) => {
+  // --- FUNCIONES PARA TAREAS (createTask MODIFICADA) ---
+  const createTask = async (taskName, roomId) => { // <--- roomId AÑADIDO
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!taskName.trim()) throw new Error("El nombre de la tarea no puede estar vacío.");
+    if (!roomId) throw new Error("Es necesario especificar una habitación para la tarea."); // <--- VALIDACIÓN
 
     const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
     await addDoc(tasksColRef, {
       name: taskName.trim(),
-      assignedTo: null, // UID del usuario asignado
-      assignedToName: null, // Nombre del usuario asignado para mostrar
+      roomId: roomId, // <--- CAMPO roomId AÑADIDO
+      assignedTo: null,
+      assignedToName: null,
       createdAt: serverTimestamp(),
-      createdBy: user.uid, // UID del creador de la tarea
-      createdByName: user.name || user.email || "Usuario Desconocido", // Nombre del creador
+      createdBy: user.uid,
+      createdByName: user.name || user.email || "Usuario Desconocido",
     });
   };
 
@@ -160,36 +171,56 @@ export function GroupProvider({ children }) {
     if (!taskId || !userIdToAssign || !userNameToAssign) {
       throw new Error("Información incompleta para asignar la tarea.");
     }
-
     const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
     await updateDoc(taskDocRef, {
       assignedTo: userIdToAssign,
       assignedToName: userNameToAssign,
-      assignedAt: serverTimestamp(), // Opcional: guardar cuándo se asignó
+      assignedAt: serverTimestamp(),
     });
   };
 
   const unassignTask = async (taskId) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!taskId) throw new Error("ID de tarea no proporcionado.");
-
     const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
     await updateDoc(taskDocRef, {
       assignedTo: null,
       assignedToName: null,
-      assignedAt: null // Opcional: limpiar o quitar el campo
+      assignedAt: null
     });
   };
 
   const deleteTask = async (taskId) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!taskId) throw new Error("ID de tarea no proporcionado.");
-
     const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
     await deleteDoc(taskDocRef);
   };
-  // --- FIN NUEVAS FUNCIONES PARA TAREAS ---
 
+  // --- NUEVAS FUNCIONES PARA HABITACIONES ---
+  const createRoom = async (roomName, initialPosition = { x: 50, y: 50 }) => {
+    if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
+    if (!roomName.trim()) throw new Error("El nombre de la habitación no puede estar vacío.");
+
+    const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
+    await addDoc(roomsColRef, {
+      name: roomName.trim(),
+      position: initialPosition, // { x: number, y: number }
+      createdAt: serverTimestamp(),
+      createdBy: user.uid,
+    });
+  };
+
+  const updateRoomPosition = async (roomId, newPosition) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!roomId || !newPosition) throw new Error("Información incompleta para actualizar la posición.");
+
+    const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
+    await updateDoc(roomDocRef, {
+      position: newPosition,
+    });
+  };
+  // --- FIN NUEVAS FUNCIONES PARA HABITACIONES ---
 
   // ... (resto de funciones existentes: approveJoinRequest, addPayment, etc. sin cambios)
   const approveJoinRequest = async (groupId, requestingUserId) => {
@@ -412,24 +443,24 @@ export function GroupProvider({ children }) {
     }
   };
 
-  // Quitar createRoom y addTask si no se usan para tareas, o redefinirlas.
-  // Las nuevas funciones de tareas las reemplazarán.
-
   return (
     <GroupContext.Provider
       value={{
         userGroups: userGroupsFromUserContext,
         currentGroup,
         setCurrentGroup,
-        tasks, // <--- Exponer nuevo estado
+        tasks,
         shoppingList,
         reminders,
         joinRequests,
         payments,
-        createTask, // <--- Exponer nueva función
-        assignTaskToUser, // <--- Exponer nueva función
-        unassignTask, // <--- Exponer nueva función
-        deleteTask, // <--- Exponer nueva función
+        rooms, // <--- Exponer estado de habitaciones
+        createTask, // (Ya modificada y expuesta)
+        assignTaskToUser,
+        unassignTask,
+        deleteTask,
+        createRoom, // <--- Exponer nueva función
+        updateRoomPosition, // <--- Exponer nueva función
         addReminder,
         addShoppingItem,
         toggleBought,
