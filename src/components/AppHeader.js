@@ -4,9 +4,11 @@ import { View, Text, TouchableOpacity, Alert, StyleSheet, Platform } from 'react
 import { Ionicons } from '@expo/vector-icons';
 import GroupSelector from './GroupSelector';
 import { UserContext } from '../context/UserContext';
+import { useTheme } from '../context/ThemeContext';
 
 export default function AppHeader() {
   const { user, logout } = useContext(UserContext);
+  const { theme } = useTheme();
 
   const handleUserPress = () => {
     Alert.alert(
@@ -24,15 +26,15 @@ export default function AppHeader() {
   const userFirstName = userName ? userName.split(' ')[0] : '';
 
   return (
-    <View style={styles.headerContainer}>
+    <View style={[styles.headerContainer, { backgroundColor: theme.cardBackground, borderBottomColor: theme.border }]}>
       <View style={styles.groupSelectorContainer}>
         <GroupSelector />
       </View>
       <TouchableOpacity onPress={handleUserPress} style={styles.userActionContainer}>
-        {userFirstName ? ( // Si userFirstName es una cadena vacía, se renderiza null, lo cual es correcto
-          <Text style={styles.greetingText}>¡Hola, {userFirstName}!</Text>
+        {userFirstName ? (
+          <Text style={[styles.greetingText, { color: theme.textPrimary }]}>¡Hola, {userFirstName}!</Text>
         ) : null}
-        <Ionicons name="person-circle-outline" size={28} color="#333" />
+        <Ionicons name="person-circle-outline" size={28} color={theme.primary} />
       </TouchableOpacity>
     </View>
   );
@@ -45,11 +47,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: '#fff',
-    marginTop: Platform.OS === 'android' ? 25 : 50, // Ajustado según tu configuración
+    marginTop: Platform.OS === 'android' ? 25 : 50,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
     height: Platform.OS === 'android' ? 70 : 80,
+    shadowColor: '#00000020',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   groupSelectorContainer: {
     flex: 1,
@@ -63,6 +68,6 @@ const styles = StyleSheet.create({
   greetingText: {
     marginRight: 8,
     fontSize: 16,
-    color: '#333',
+    fontWeight: '600',
   },
 });
