@@ -36,9 +36,19 @@ export default function RegisterScreen({ navigation }) {
     }
     try {
       await register(name.trim(), email.trim(), password);
-      navigation.navigate('Login');
+      // ELIMINADO: navigation.navigate('Login');
+      // React Navigation manejará la redirección automáticamente
+      // basándose en el cambio de estado de 'user' en UserContext.
+      // Opcionalmente, puedes mostrar un mensaje indicando que el registro fue exitoso
+      // y que será redirigido, aunque la transición suele ser rápida.
+      // Por ejemplo:
+      // Alert.alert(
+      //   'Registro Exitoso',
+      //   'Tu cuenta ha sido creada. Serás redirigido automáticamente.'
+      // );
+      // No es estrictamente necesario navegar aquí, el cambio de estado lo hará.
     } catch (err) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error de Registro', err.message); // Mensaje de error más específico
     }
   };
 
@@ -54,6 +64,7 @@ export default function RegisterScreen({ navigation }) {
         style={styles.input}
         placeholder="Email"
         autoCapitalize="none"
+        keyboardType="email-address" // Buen añadido para el campo email
         value={email}
         onChangeText={setEmail}
       />
@@ -65,6 +76,11 @@ export default function RegisterScreen({ navigation }) {
         onChangeText={setPassword}
       />
       <Button title="Registrarse" onPress={handleRegister} />
+      {/* El botón para ir a Login si el usuario decide no registrarse */}
+      <Button
+        title="Ya tengo cuenta, Iniciar Sesión"
+        onPress={() => navigation.navigate('Login')} 
+      />
     </View>
   );
 }
@@ -78,9 +94,9 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#ccc',
-    padding: 8,
+    padding: 10, // Aumentado para mejor tacto
     marginBottom: 12,
-    borderRadius: 4
+    borderRadius: 5 // Bordes ligeramente redondeados
   },
   info: {
     fontSize: 16,
