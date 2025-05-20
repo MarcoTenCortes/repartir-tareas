@@ -2,7 +2,7 @@
 import React, { useState, useContext, useMemo, useCallback } from 'react';
 import {
   View, Text, TextInput, Button, FlatList, Alert,
-  StyleSheet, TouchableOpacity, Dimensions
+  StyleSheet, TouchableOpacity, Dimensions,
 } from 'react-native';
 import { PanGestureHandler } from 'react-native-gesture-handler';
 import Animated, {
@@ -35,7 +35,7 @@ const DraggableRoomComponent = ({ room, onSelectRoom, onDragEnd, selected, initi
       translateX.value = ctx.startX + event.translationX;
       translateY.value = ctx.startY + event.translationY;
     },
-    onEnd: (event) => { // ctx no es necesario aquí si usamos databaseStart y event.translation
+    onEnd: (event) => {
       const finalX = databaseStartX.value + event.translationX;
       const finalY = databaseStartY.value + event.translationY;
 
@@ -69,11 +69,10 @@ const DraggableRoomComponent = ({ room, onSelectRoom, onDragEnd, selected, initi
 
 // Función para generar estilos dependientes del tema
 const getScreenStyles = (theme) => StyleSheet.create({
-  container: {
+  container: { // Estilo para el FlatList principal
     flex: 1,
     backgroundColor: theme.background,
   },
-  // Estilos para el ListHeaderComponent
   listHeaderContainer: {
     padding: 16,
   },
@@ -137,22 +136,21 @@ const getScreenStyles = (theme) => StyleSheet.create({
     color: theme.textLight || '#fff',
     fontSize: 14,
   },
-  tasksSectionHeader: { // Estilo para el contenedor de la sección de tareas (dentro del header)
+  tasksSectionHeader: {
     marginTop: 20,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: theme.border || '#e0e0e0',
   },
-  // Estilos para los items de la lista de tareas
   taskItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 12,
-    paddingHorizontal: 16, // Padding para los items
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: theme.border || '#eee',
-    backgroundColor: theme.background, // Fondo para items de tarea
+    backgroundColor: theme.background,
   },
   taskName: {
     flex: 1,
@@ -183,17 +181,17 @@ const getScreenStyles = (theme) => StyleSheet.create({
     marginLeft: 10,
     padding: 5,
   },
-  emptyText: { // Para mensajes de lista vacía
-    textAlign: 'center',
-    marginTop: 20,
-    padding: 16,
-    color: theme.textSecondary,
-    fontSize: 16,
-  },
-  emptyListContainer: { // Para el contentContainerStyle de FlatList cuando está vacío
-    flexGrow: 1,
+  emptyTextContainer: { // Contenedor para el mensaje de lista vacía
+    flex: 1, // Para que ocupe el espacio vertical restante en el contentContainer del FlatList
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 20, // Espacio vertical dentro del contenedor
+  },
+  emptyText: { // Estilo solo para el texto
+    textAlign: 'center',
+    color: theme.textSecondary,
+    fontSize: 16,
+    paddingHorizontal: 16, // Espacio horizontal para el texto
   },
 });
 
@@ -210,6 +208,7 @@ const ListHeaderComponent = React.memo(({
   handleCreateTaskForSelectedRoom,
   mapContainerLayout,
   handleMapLayout,
+  handleRoomDragRelease,
   styles,
   theme
 }) => {
@@ -263,14 +262,20 @@ const ListHeaderComponent = React.memo(({
     </View>
   );
 }, (prevProps, nextProps) => {
-  // Implementa una comparación superficial de las props para determinar si se debe re-renderizar
   return (
     prevProps.currentGroup === nextProps.currentGroup &&
     prevProps.rooms === nextProps.rooms &&
     prevProps.newRoomName === nextProps.newRoomName &&
     prevProps.selectedRoom === nextProps.selectedRoom &&
     prevProps.newTaskName === nextProps.newTaskName &&
-    prevProps.mapContainerLayout === nextProps.mapContainerLayout
+    prevProps.mapContainerLayout === nextProps.mapContainerLayout &&
+    prevProps.handleCreateRoom === nextProps.handleCreateRoom &&
+    prevProps.handleSelectRoom === nextProps.handleSelectRoom &&
+    prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom &&
+    prevProps.handleMapLayout === nextProps.handleMapLayout &&
+    prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease &&
+    prevProps.styles === nextProps.styles &&
+    prevProps.theme === nextProps.theme
   );
 });
 
@@ -341,7 +346,7 @@ export default function TasksScreen() {
   const handleSelectRoom = useCallback((room) => {
     setSelectedRoom(room);
     setNewTaskName('');
-  }, [setSelectedRoom, setNewTaskName]);
+  }, []);
 
   const handleCreateTaskForSelectedRoom = useCallback(async () => {
     if (!newTaskName.trim()) {
@@ -369,7 +374,7 @@ export default function TasksScreen() {
 
   return (
     <FlatList
-      style={styles.container}
+      style={styles.container} // FlatList ocupa flex: 1
       data={tasksForSelectedRoom}
       keyExtractor={item => item.id}
       ListHeaderComponent={useMemo(() => (
@@ -386,14 +391,15 @@ export default function TasksScreen() {
           handleCreateTaskForSelectedRoom={handleCreateTaskForSelectedRoom}
           mapContainerLayout={mapContainerLayout}
           handleMapLayout={handleMapLayout}
+          handleRoomDragRelease={handleRoomDragRelease}
           styles={styles}
           theme={theme}
         />
       ), [
-        currentGroup, rooms, newRoomName, setNewRoomName, handleCreateRoom,
-        selectedRoom, handleSelectRoom, newTaskName, setNewTaskName,
+        currentGroup, rooms, newRoomName, /*setNewRoomName,*/ handleCreateRoom,
+        selectedRoom, handleSelectRoom, newTaskName, /*setNewTaskName,*/
         handleCreateTaskForSelectedRoom, mapContainerLayout, handleMapLayout,
-        styles, theme
+        handleRoomDragRelease, styles, theme
       ])}
       renderItem={({ item }) => (
         <View style={styles.taskItem}>
@@ -425,12 +431,20 @@ export default function TasksScreen() {
       )}
       ListEmptyComponent={
         currentGroup ? (
-          selectedRoom && tasksForSelectedRoom.length === 0 ?
-            <Text style={styles.emptyText}>No hay tareas para esta habitación.</Text> :
-            !selectedRoom ? <Text style={styles.emptyText}>Selecciona una habitación para ver sus tareas.</Text> : null
-        ) : null
+          selectedRoom ? ( // Solo mostrar ListEmptyComponent si una habitación está seleccionada
+            tasksForSelectedRoom.length === 0 ? ( // Y si no hay tareas para esa habitación
+              <View style={styles.emptyTextContainer}> 
+                <Text style={styles.emptyText}>No hay tareas para esta habitación.</Text>
+              </View>
+            ) : null // Si hay tareas, no se renderiza este componente
+          ) : ( // Si no hay habitación seleccionada (pero sí un grupo)
+            <View style={styles.emptyTextContainer}> 
+              <Text style={styles.emptyText}>Selecciona una habitación para ver sus tareas.</Text>
+            </View>
+          )
+        ) : null 
       }
-      contentContainerStyle={tasksForSelectedRoom.length === 0 && selectedRoom ? styles.emptyListContainer : {}}
+      contentContainerStyle={{ flexGrow: 1 }} 
     />
   );
 }
