@@ -3,7 +3,7 @@ import React from 'react';
 import { LogBox } from 'react-native';
 import { UserProvider } from './src/context/UserContext';
 import { GroupProvider } from './src/context/GroupContext';
-import { ThemeProvider } from './src/context/ThemeContext'; // Importa ThemeProvider
+import { ThemeProvider } from './src/context/ThemeContext';  // Importar
 import AppNavigator from './src/navigation/AppNavigator';
 
 LogBox.ignoreLogs([
@@ -13,13 +13,13 @@ LogBox.ignoreLogs([
 ]);
 
 export default function App() {
-  return (
+  return ( // <-- Revisa aquí
     <UserProvider>
       <GroupProvider>
-        <ThemeProvider> {/* Envuelve AppNavigator con ThemeProvider */}
+        <ThemeProvider>
           <AppNavigator />
         </ThemeProvider>
       </GroupProvider>
     </UserProvider>
-  );
+  ); // <-- Y aquí
 }
