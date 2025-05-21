@@ -19,17 +19,20 @@ import * as Animatable from 'react-native-animatable';
 import { UserContext } from '../context/UserContext';
 import { GroupContext } from '../context/GroupContext';
 import { useTheme } from '../context/ThemeContext';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
-
-export default function GroupSettingsScreen({ navigation }) {
-  const { user, groups: userOwnedGroups } = useContext(UserContext);
+export default function GroupSettingsScreen() {
+  const navigation = useNavigation();
+  const { user, groups: userAppGroups, leaveGroup, deleteGroup } = useContext(UserContext); // leaveGroup y deleteGroup de UserContext
   const {
-    currentGroup: contextCurrentGroup, // Renombrar para evitar conflicto
+    currentGroup: contextCurrentGroup,
     setCurrentGroup: setContextCurrentGroup,
     updateGroupName,
     removeMemberFromGroup,
-    getGroupMembersDetails
+    getGroupMembersDetails,
+    joinRequests, 
+    approveJoinRequest, 
+    rejectJoinRequest 
   } = useContext(GroupContext);
   const { theme } = useTheme();
   const styles = getStyles(theme);
@@ -37,24 +40,37 @@ export default function GroupSettingsScreen({ navigation }) {
   const [selectedGroupForEditing, setSelectedGroupForEditing] = useState(null);
   const [groupNameToEdit, setGroupNameToEdit] = useState('');
   const [members, setMembers] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // Para carga general de la pantalla o nombre
   const [isMembersLoading, setIsMembersLoading] = useState(false);
   const [isFocusDropdown, setIsFocusDropdown] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false); // Para acciones específicas como aprobar, rechazar, abandonar, eliminar
 
+  // Filtrar grupos donde el usuario actual es el propietario para el dropdown de edición
+  // y también todos los grupos a los que pertenece el usuario para el dropdown de "Abandonar Grupo"
+  const userOwnedGroupsForDropdown = userAppGroups.filter(g => g.owner === user?.uid);
+  const allUserGroupsForDropdown = userAppGroups; // Para el selector de grupo a abandonar/ver
 
-  // Sincronizar selectedGroupForEditing con el currentGroup del contexto al entrar
-  useEffect(() => {
+ useEffect(() => {
+    // Si hay un grupo actual en el contexto, usar ese para la edición y otras acciones
     if (contextCurrentGroup) {
       setSelectedGroupForEditing(contextCurrentGroup);
-    } else if (userOwnedGroups.length > 0) {
-      // Si no hay currentGroup en contexto pero sí hay grupos del usuario, seleccionar el primero
-      setSelectedGroupForEditing(userOwnedGroups[0]);
-      setContextCurrentGroup(userOwnedGroups[0]); // Actualizar también el contexto
+    } 
+    // Si no, y el usuario es propietario de algún grupo, seleccionar el primero de sus grupos para editar
+    else if (userOwnedGroupsForDropdown.length > 0) {
+      setSelectedGroupForEditing(userOwnedGroupsForDropdown[0]);
+      // Opcional: setContextCurrentGroup(userOwnedGroupsForDropdown[0]); si quieres que esto cambie el grupo global
+    } 
+    // Si no es propietario de ninguno, pero pertenece a grupos, seleccionar el primero para ver (y potencialmente abandonar)
+    else if (allUserGroupsForDropdown.length > 0) {
+        setSelectedGroupForEditing(allUserGroupsForDropdown[0]);
     }
-  }, [contextCurrentGroup, userOwnedGroups, setContextCurrentGroup]);
+    // Si no pertenece a ningún grupo
+    else {
+        setSelectedGroupForEditing(null);
+    }
+  }, [contextCurrentGroup, userAppGroups, user]); // userAppGroups en lugar de userOwnedGroupsForDropdown
 
 
-  // Cargar nombre y miembros cuando selectedGroupForEditing cambia
   useEffect(() => {
     if (selectedGroupForEditing) {
       setGroupNameToEdit(selectedGroupForEditing.name);
@@ -62,23 +78,20 @@ export default function GroupSettingsScreen({ navigation }) {
     } else {
       setGroupNameToEdit('');
       setMembers([]);
+      // Si no hay grupo seleccionado, no debería haber solicitudes de unión visibles
     }
   }, [selectedGroupForEditing]);
   
-  // Refrescar miembros si el grupo actual en el contexto cambia (por ejemplo, si se elimina un miembro)
   useFocusEffect(
     useCallback(() => {
       if (selectedGroupForEditing && contextCurrentGroup && selectedGroupForEditing.id === contextCurrentGroup.id) {
-        // Si el grupo editado es el mismo que el del contexto y ha habido cambios en los miembros del contexto
         if (JSON.stringify(selectedGroupForEditing.members) !== JSON.stringify(contextCurrentGroup.members)) {
-             fetchMembers(contextCurrentGroup.members); // Recargar miembros
-             // Actualizar selectedGroupForEditing para que tenga la lista de miembros más reciente
+             fetchMembers(contextCurrentGroup.members); 
              setSelectedGroupForEditing(prev => ({...prev, members: contextCurrentGroup.members}));
         }
       }
     }, [contextCurrentGroup, selectedGroupForEditing])
   );
-
 
   const fetchMembers = async (memberUIDs) => {
     if (!memberUIDs || memberUIDs.length === 0) {
@@ -91,28 +104,25 @@ export default function GroupSettingsScreen({ navigation }) {
       setMembers(memberDetails);
     } catch (error) {
       Alert.alert('Error', 'No se pudo cargar la lista de miembros.');
-      console.error("Error fetching members:", error);
     } finally {
       setIsMembersLoading(false);
     }
   };
 
   const handleUpdateGroupName = async () => {
-    if (!selectedGroupForEditing || !groupNameToEdit.trim()) {
-      Alert.alert('Error', 'Selecciona un grupo y escribe un nombre válido.');
+    if (!selectedGroupForEditing || !groupNameToEdit.trim() || selectedGroupForEditing.owner !== user?.uid) {
+      Alert.alert('Error', 'Debes ser el propietario y proporcionar un nombre válido.');
       return;
     }
     if (selectedGroupForEditing.name === groupNameToEdit.trim()) {
       Alert.alert('Información', 'El nombre del grupo no ha cambiado.');
       return;
     }
-    setIsLoading(true);
+    setIsLoading(true); // Usar isLoading para la acción principal de la pantalla
     try {
       await updateGroupName(selectedGroupForEditing.id, groupNameToEdit.trim());
       Alert.alert('Éxito', 'Nombre del grupo actualizado.');
-      // Actualizar el selectedGroupForEditing para reflejar el cambio localmente
-      setSelectedGroupForEditing(prev => ({ ...prev, name: groupNameToEdit.trim() }));
-      // El UserContext y GroupContext se actualizarán a través de listeners de Firestore
+      // selectedGroupForEditing se actualizará vía listener o se puede actualizar localmente
     } catch (error) {
       Alert.alert('Error', `No se pudo actualizar el nombre: ${error.message}`);
     } finally {
@@ -121,172 +131,260 @@ export default function GroupSettingsScreen({ navigation }) {
   };
 
   const handleRemoveMember = (memberIdToRemove, memberNameToRemove) => {
-    if (!selectedGroupForEditing) return;
+    if (!selectedGroupForEditing || selectedGroupForEditing.owner !== user?.uid) {
+        Alert.alert('Error', 'Solo el propietario puede eliminar miembros.');
+        return;
+    }
     Alert.alert(
       'Confirmar Eliminación',
-      `¿Estás seguro de que quieres eliminar a "${memberNameToRemove}" del grupo "${selectedGroupForEditing.name}"?`,
+      `¿Eliminar a "${memberNameToRemove}" de "${selectedGroupForEditing.name}"?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
-            setIsLoading(true);
+            setActionLoading(true);
             try {
               await removeMemberFromGroup(selectedGroupForEditing.id, memberIdToRemove);
-              Alert.alert('Éxito', `"${memberNameToRemove}" ha sido eliminado del grupo.`);
-              // Los miembros se refrescarán a través de useFocusEffect y cambios en contextCurrentGroup.members
+              Alert.alert('Éxito', `"${memberNameToRemove}" ha sido eliminado.`);
             } catch (error) {
-              Alert.alert('Error', `No se pudo eliminar al miembro: ${error.message}`);
+              Alert.alert('Error', `No se pudo eliminar: ${error.message}`);
             } finally {
-              setIsLoading(false);
+              setActionLoading(false);
             }
           },
         },
-      ],
-      { cancelable: true }
+      ]
+    );
+  };
+
+  const handleApproveRequest = async (groupId, requestingUserId, userName) => {
+    if (selectedGroupForEditing?.owner !== user?.uid) return;
+    setActionLoading(true);
+    try {
+      await approveJoinRequest(groupId, requestingUserId);
+      Alert.alert('Éxito', `${userName} ha sido añadido al grupo.`);
+    } catch (error) {
+      Alert.alert('Error', `No se pudo aprobar: ${error.message}`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRejectRequest = (groupId, requestingUserId, userName) => {
+    if (selectedGroupForEditing?.owner !== user?.uid) return;
+    Alert.alert('Confirmar Rechazo', `¿Rechazar solicitud de ${userName}?`,
+      [ { text: 'Cancelar' },
+        { text: 'Rechazar', style: 'destructive', onPress: async () => {
+            setActionLoading(true);
+            try { await rejectJoinRequest(groupId, requestingUserId);
+                  Alert.alert('Éxito', `Solicitud de ${userName} rechazada.`);
+            } catch (e) { Alert.alert('Error', `No se pudo rechazar: ${e.message}`); }
+            finally { setActionLoading(false); }
+        }}
+      ]
+    );
+  };
+
+  const handleLeaveSelectedGroup = () => {
+    if (!selectedGroupForEditing) {
+        Alert.alert("Error", "Ningún grupo seleccionado para abandonar.");
+        return;
+    }
+    if (selectedGroupForEditing.owner === user?.uid && selectedGroupForEditing.members.length > 1) {
+        Alert.alert("Acción no permitida", "Eres el propietario. Para abandonar, primero elimina el grupo o transfiere la propiedad (función no implementada).");
+        return;
+    }
+     if (selectedGroupForEditing.owner === user?.uid && selectedGroupForEditing.members.length === 1) {
+        Alert.alert("Información", "Eres el único miembro y propietario. Utiliza la opción 'Eliminar Grupo' en su lugar.");
+        return;
+    }
+
+    Alert.alert( "Abandonar Grupo", `¿Seguro que quieres abandonar "${selectedGroupForEditing.name}"?`,
+      [ { text: "Cancelar" },
+        { text: "Abandonar", style: "destructive", onPress: async () => {
+            setActionLoading(true);
+            try { await leaveGroup(selectedGroupForEditing.id);
+                  Alert.alert('Éxito', `Has abandonado "${selectedGroupForEditing.name}".`);
+                  setSelectedGroupForEditing(null); 
+                  setContextCurrentGroup(null); 
+            } catch (e) { Alert.alert('Error', `No se pudo abandonar: ${e.message}`); }
+            finally { setActionLoading(false); }
+        }}
+      ]
+    );
+  };
+
+  const handleDeleteSelectedGroup = () => {
+    if (!selectedGroupForEditing || selectedGroupForEditing.owner !== user?.uid) {
+        Alert.alert("Error", "Solo el propietario puede eliminar el grupo.");
+        return;
+    }
+    Alert.alert("Eliminar Grupo", `¿SEGURO de que quieres eliminar "${selectedGroupForEditing.name}"? Esta acción es IRREVERSIBLE.`,
+      [ { text: "Cancelar" },
+        { text: "Eliminar Grupo", style: "destructive", onPress: async () => {
+            setActionLoading(true);
+            try { await deleteGroup(selectedGroupForEditing.id);
+                  Alert.alert('Éxito', `Grupo "${selectedGroupForEditing.name}" eliminado.`);
+                  setSelectedGroupForEditing(null);
+                  setContextCurrentGroup(null);
+            } catch (e) { Alert.alert('Error', `No se pudo eliminar: ${e.message}`); }
+            finally { setActionLoading(false); }
+        }}
+      ]
     );
   };
   
   const isCurrentUserOwner = selectedGroupForEditing && user && selectedGroupForEditing.owner === user.uid;
 
-  const dataForDropdown = Array.isArray(userOwnedGroups) ? userOwnedGroups.map(group => ({
+  // Usar todos los grupos del usuario para el selector general de esta pantalla
+  const dataForDropdown = Array.isArray(allUserGroupsForDropdown) ? allUserGroupsForDropdown.map(group => ({
     label: group.name,
     value: group.id,
-    fullGroup: group // Guardar el objeto completo para fácil acceso
+    fullGroup: group
   })) : [];
-
 
   if (!user) {
     return <View style={styles.centeredMessageContainer}><Text style={styles.infoText}>Debes iniciar sesión.</Text></View>;
   }
   
-  // if (userOwnedGroups.length === 0) {
-  //   return <View style={styles.centeredMessageContainer}><Text style={styles.infoText}>No perteneces a ningún grupo.</Text></View>;
-  // }
-
   return (
-    <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={styles.keyboardAvoidingContainer}
-    >
-    <ScrollView contentContainerStyle={styles.scrollContainer}>
-      <Animatable.View animation="fadeInDown" style={styles.header}>
-        <Ionicons name="settings-outline" size={30} color={theme.primary} />
-        <Text style={styles.mainTitle}>Configuración de Grupos</Text>
-      </Animatable.View>
-
-    {userOwnedGroups.length === 0 ? (
-         <View style={styles.centeredMessageContainer}>
-            <Ionicons name="people-circle-outline" size={60} color={theme.textSecondary} style={{marginBottom:10}}/>
-            <Text style={styles.infoText}>Aún no perteneces a ningún grupo.</Text>
-            <Text style={styles.infoTextSmall}>Crea uno o únete a uno existente desde la pantalla de inicio.</Text>
-         </View>
-    ) : (
-    <>
-      <Animatable.View animation="fadeInUp" delay={100} style={styles.sectionContainer}>
-        <Text style={styles.label}>Selecciona un grupo para administrar:</Text>
-        <Dropdown
-          style={[styles.dropdown, { borderColor: isFocusDropdown ? theme.primary : theme.border, backgroundColor: theme.cardBackground }]}
-          placeholderStyle={[styles.placeholderStyle, { color: theme.textSecondary }]}
-          selectedTextStyle={[styles.selectedTextStyle, { color: theme.textPrimary }]}
-          inputSearchStyle={[styles.inputSearchStyle, { color: theme.textPrimary }]}
-          iconStyle={styles.iconStyle}
-          data={dataForDropdown}
-          search
-          maxHeight={250}
-          labelField="label"
-          valueField="value"
-          placeholder={!isFocusDropdown && selectedGroupForEditing ? selectedGroupForEditing.name : "Selecciona un grupo"}
-          searchPlaceholder="Buscar grupo..."
-          value={selectedGroupForEditing ? selectedGroupForEditing.id : null}
-          onFocus={() => setIsFocusDropdown(true)}
-          onBlur={() => setIsFocusDropdown(false)}
-          onChange={item => {
-            setSelectedGroupForEditing(item.fullGroup); // item.fullGroup contiene el objeto completo
-            setContextCurrentGroup(item.fullGroup); // Actualizar también el currentGroup del contexto global
-            setIsFocusDropdown(false);
-          }}
-          renderLeftIcon={() => (
-            <Ionicons
-              style={styles.dropdownIcon}
-              color={isFocusDropdown ? theme.primary : theme.textSecondary}
-              name="people-outline"
-              size={20}
-            />
-          )}
-        />
-      </Animatable.View>
-
-      {selectedGroupForEditing && (
-        <Animatable.View animation="fadeInUp" delay={200} style={styles.sectionContainer}>
-          <Text style={styles.sectionTitle}>Administrar: {selectedGroupForEditing.name}</Text>
-          
-          {isCurrentUserOwner ? (
-            <>
-              <Text style={styles.label}>Cambiar nombre del grupo:</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="create-outline" size={20} color={theme.placeholder} style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="Nuevo nombre del grupo"
-                  placeholderTextColor={theme.placeholder}
-                  value={groupNameToEdit}
-                  onChangeText={setGroupNameToEdit}
-                />
-              </View>
-              <TouchableOpacity 
-                style={[styles.buttonPrimary, isLoading && styles.buttonDisabled]} 
-                onPress={handleUpdateGroupName}
-                disabled={isLoading || groupNameToEdit === selectedGroupForEditing.name}
-              >
-                {isLoading ? <ActivityIndicator color={theme.textLight} /> : <Text style={styles.buttonTextPrimary}>Guardar Nombre</Text>}
-              </TouchableOpacity>
-            </>
-          ) : (
-            <Text style={styles.infoText}>No eres el propietario de este grupo, no puedes cambiar su nombre ni eliminar miembros.</Text>
-          )}
-
-          <Text style={styles.label}>Miembros del grupo ({members.length}):</Text>
-          {isMembersLoading ? (
-            <ActivityIndicator size="large" color={theme.primary} style={{marginVertical: 20}} />
-          ) : members.length > 0 ? (
-            <FlatList
-              data={members}
-              keyExtractor={(item) => item.uid}
-              renderItem={({ item }) => (
-                <View style={styles.memberItem}>
-                  <View style={styles.memberInfo}>
-                     <Ionicons name={item.icon || 'person-circle-outline'} size={28} color={theme.textSecondary} style={styles.memberIcon}/>
-                     <Text style={styles.memberName}>{item.name} {item.uid === selectedGroupForEditing.owner ? '(Propietario)' : ''}</Text>
-                  </View>
-                  {isCurrentUserOwner && item.uid !== user.uid && (
-                    <TouchableOpacity 
-                        onPress={() => handleRemoveMember(item.uid, item.name)} 
-                        style={styles.removeButton}
-                        disabled={isLoading}
-                    >
-                      <Ionicons name="trash-bin-outline" size={22} color={theme.error} />
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-              style={styles.membersList}
-              scrollEnabled={false} // Para que el scroll principal maneje todo
-            />
-          ) : (
-            <Text style={styles.infoText}>No hay miembros en este grupo o no se pudieron cargar.</Text>
-          )}
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoidingContainer}>
+      <ScrollView contentContainerStyle={styles.scrollContainer}>
+        <Animatable.View animation="fadeInDown" style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Ionicons name="arrow-back-outline" size={28} color={theme.primary} />
+          </TouchableOpacity>
+          <Ionicons name="settings-outline" size={30} color={theme.primary} style={{ marginLeft: 10 }}/>
+          <Text style={styles.mainTitle}>Configuración de Grupos</Text>
         </Animatable.View>
-      )}
-      {isLoading && <ActivityIndicator size="large" color={theme.primary} style={styles.globalLoader} />}
-      </>
-    )}
-    </ScrollView>
+
+        {allUserGroupsForDropdown.length === 0 ? (
+            <View style={styles.centeredMessageContainer}>
+                <Ionicons name="people-off-outline" size={60} color={theme.textSecondary} style={{marginBottom:10}}/>
+                <Text style={styles.infoText}>No perteneces a ningún grupo.</Text>
+                <Text style={styles.infoTextSmall}>Crea o únete a un grupo desde la pantalla de inicio.</Text>
+            </View>
+        ) : (
+        <>
+          <Animatable.View animation="fadeInUp" delay={100} style={styles.sectionContainer}>
+            <Text style={styles.label}>Selecciona un grupo:</Text>
+            <Dropdown
+              style={[styles.dropdown, { borderColor: isFocusDropdown ? theme.primary : theme.border }]}
+              placeholderStyle={[styles.placeholderStyle, { color: theme.textSecondary }]}
+              selectedTextStyle={[styles.selectedTextStyle, { color: theme.textPrimary }]}
+              inputSearchStyle={styles.inputSearchStyle} // No necesita color aquí, hereda
+              iconStyle={styles.iconStyle}
+              data={dataForDropdown}
+              search
+              maxHeight={250}
+              labelField="label"
+              valueField="value"
+              placeholder={!isFocusDropdown && selectedGroupForEditing ? selectedGroupForEditing.name : "Selecciona un grupo"}
+              searchPlaceholder="Buscar grupo..."
+              value={selectedGroupForEditing ? selectedGroupForEditing.id : null}
+              onFocus={() => setIsFocusDropdown(true)}
+              onBlur={() => setIsFocusDropdown(false)}
+              onChange={item => {
+                setSelectedGroupForEditing(item.fullGroup); 
+                // Opcional: Si quieres que al seleccionar aquí cambie el grupo global
+                // setContextCurrentGroup(item.fullGroup); 
+                setIsFocusDropdown(false);
+              }}
+              renderLeftIcon={() => ( <Ionicons style={styles.dropdownIcon} color={isFocusDropdown ? theme.primary : theme.textSecondary} name="list-outline" size={20}/> )}
+            />
+          </Animatable.View>
+
+          {selectedGroupForEditing && (
+            <>
+            {/* Sección de Administración (si es propietario) */}
+            {isCurrentUserOwner && (
+                <Animatable.View animation="fadeInUp" delay={200} style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>Administrar: {selectedGroupForEditing.name}</Text>
+                    <Text style={styles.label}>Cambiar nombre del grupo:</Text>
+                    <View style={styles.inputContainer}>
+                        <Ionicons name="create-outline" size={20} color={theme.placeholder} style={styles.inputIcon} />
+                        <TextInput style={styles.input} placeholder="Nuevo nombre" value={groupNameToEdit} onChangeText={setGroupNameToEdit} />
+                    </View>
+                    <TouchableOpacity style={[styles.buttonPrimary, (isLoading || actionLoading || groupNameToEdit === selectedGroupForEditing.name) && styles.buttonDisabled]} onPress={handleUpdateGroupName} disabled={isLoading || actionLoading || groupNameToEdit === selectedGroupForEditing.name}>
+                        {isLoading && !actionLoading ? <ActivityIndicator color={theme.textLight} /> : <Text style={styles.buttonTextPrimary}>Guardar Nombre</Text>}
+                    </TouchableOpacity>
+
+                    <Text style={styles.label}>Miembros ({members.length}):</Text>
+                    {isMembersLoading ? <ActivityIndicator color={theme.primary} style={{marginVertical:15}}/> : (
+                        members.length > 0 ? (
+                        <FlatList data={members} keyExtractor={(item) => item.uid} scrollEnabled={false}
+                            renderItem={({ item }) => (
+                            <View style={styles.memberItem}>
+                                <View style={styles.memberInfo}><Ionicons name={item.icon || 'person-circle-outline'} size={28} color={theme.textSecondary} style={styles.memberIcon}/><Text style={styles.memberName}>{item.name} {item.uid === selectedGroupForEditing.owner ? '(Propietario)' : ''}</Text></View>
+                                {item.uid !== user.uid && <TouchableOpacity onPress={() => handleRemoveMember(item.uid, item.name)} style={styles.removeButton} disabled={actionLoading}><Ionicons name="person-remove-outline" size={22} color={theme.error} /></TouchableOpacity>}
+                            </View> )} />
+                        ) : <Text style={styles.infoText}>No hay otros miembros o no se pudieron cargar.</Text>
+                    )}
+                </Animatable.View>
+            )}
+
+            {/* Solicitudes de Unión (si es propietario y es el grupo actual del contexto) */}
+            {isCurrentUserOwner && contextCurrentGroup?.id === selectedGroupForEditing.id && (
+                <Animatable.View animation="fadeInUp" delay={300} style={styles.sectionContainer}>
+                    <Text style={styles.sectionTitle}>Solicitudes de Unión ({joinRequests.length})</Text>
+                    {actionLoading && <ActivityIndicator color={theme.primary} style={{ marginVertical:10}}/>}
+                    {joinRequests.length > 0 ? (
+                        <FlatList data={joinRequests} keyExtractor={(item) => item.id} scrollEnabled={false}
+                            renderItem={({ item }) => (
+                            <View style={styles.requestItem}>
+                                <Text style={styles.requestName}>{item.requestingUserName || item.id}</Text>
+                                <View style={styles.requestActions}>
+                                    <TouchableOpacity style={[styles.actionButtonSmall, { backgroundColor: theme.error }]} onPress={() => handleRejectRequest(selectedGroupForEditing.id, item.id, item.requestingUserName || item.id)} disabled={actionLoading}><Ionicons name="close-circle-outline" size={20} color={theme.textLight} /></TouchableOpacity>
+                                    <TouchableOpacity style={[styles.actionButtonSmall, { backgroundColor: theme.success }]} onPress={() => handleApproveRequest(selectedGroupForEditing.id, item.id, item.requestingUserName || item.id)} disabled={actionLoading}><Ionicons name="checkmark-circle-outline" size={20} color={theme.textLight} /></TouchableOpacity>
+                                </View>
+                            </View> )} />
+                    ) : <Text style={styles.infoText}>No hay solicitudes pendientes.</Text>}
+                </Animatable.View>
+            )}
+            
+            {/* Acciones: Abandonar y Eliminar Grupo */}
+            <Animatable.View animation="fadeInUp" delay={isCurrentUserOwner ? 400 : 200} style={styles.sectionContainer}>
+                <Text style={styles.sectionTitle}>Otras Acciones</Text>
+
+                {/* BOTÓN ABANDONAR GRUPO */}
+                <TouchableOpacity
+                    style={[styles.buttonDestructive, { backgroundColor: theme.warning }, actionLoading && styles.buttonDisabled]}
+                    onPress={handleLeaveSelectedGroup}
+                    disabled={actionLoading}
+                >
+                    <Ionicons name="walk-outline" size={20} color={theme.textLight} style={{marginRight: 10}}/>
+                    <Text style={styles.buttonTextPrimary}>Abandonar "{selectedGroupForEditing.name}"</Text>
+                </TouchableOpacity>
+
+                {/* BOTÓN ELIMINAR GRUPO (Solo si es propietario) */}
+                {isCurrentUserOwner && (
+                    <TouchableOpacity
+                        style={[styles.buttonDestructive, { marginTop: 15 } , actionLoading && styles.buttonDisabled]} // marginTop para separarlo del de abandonar
+                        onPress={handleDeleteSelectedGroup}
+                        disabled={actionLoading}
+                    >
+                        <Ionicons name="trash-bin-outline" size={20} color={theme.textLight} style={{marginRight: 10}}/>
+                        <Text style={styles.buttonTextPrimary}>Eliminar "{selectedGroupForEditing.name}"</Text>
+                    </TouchableOpacity>
+                )}
+                {actionLoading && <ActivityIndicator color={theme.primary} style={{ marginTop:15}}/>}
+            </Animatable.View>
+            </>
+          )}
+          {(isLoading && !actionLoading) && <ActivityIndicator size="large" color={theme.primary} style={styles.globalLoader} />}
+        </>
+        )}
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+// Los estilos (getStyles) son los mismos que en la respuesta anterior que incluía esta pantalla,
+// asegurándose de que styles.buttonDestructive, styles.buttonPrimary, etc., estén definidos.
+// Para brevedad, no se repite toda la función getStyles aquí si no ha cambiado significativamente.
+// Asegúrate de que los estilos de la respuesta anterior que modificó GroupSettingsScreen.js estén presentes.
 const getStyles = (theme) => StyleSheet.create({
   keyboardAvoidingContainer: {
     flex: 1,
@@ -294,18 +392,22 @@ const getStyles = (theme) => StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: 15,
     paddingBottom: 40,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-    marginTop: Platform.OS === 'android' ? 20 : 30,
+    paddingVertical: 15,
+    marginTop: Platform.OS === 'android' ? 25 : 40,
+    marginBottom: 10,
+  },
+  backButton: {
+    padding: 5,
+    marginRight: 5,
   },
   mainTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: theme.primary,
     marginLeft: 10,
@@ -313,142 +415,180 @@ const getStyles = (theme) => StyleSheet.create({
   sectionContainer: {
     backgroundColor: theme.cardBackground,
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 25,
+    padding: 15,
+    marginBottom: 20,
     shadowColor: theme.shadowColor || '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.07,
+    shadowRadius: 5,
+    elevation: 4,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
     color: theme.textPrimary,
-    marginBottom: 15,
+    marginBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    paddingBottom: 10,
+    borderBottomColor: theme.borderLight,
+    paddingBottom: 8,
   },
   label: {
-    fontSize: 16,
+    fontSize: 15,
     color: theme.textSecondary,
     marginBottom: 8,
-    marginTop: 10,
+    marginTop: 8,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.inputBackground,
     borderRadius: 10,
-    marginBottom: 15,
-    paddingHorizontal: 15,
+    marginBottom: 12,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: theme.border,
+    height: 48,
   },
   inputIcon: {
     marginRight: 10,
   },
   input: {
     flex: 1,
-    height: 50,
-    fontSize: 16,
+    fontSize: 15,
     color: theme.textPrimary,
   },
   buttonPrimary: {
     backgroundColor: theme.primary,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
-    marginTop: 10,
-    minHeight: 50,
+    marginTop: 8,
+    minHeight: 48,
     justifyContent: 'center',
+  },
+  buttonDestructive: { // Estilo base para botones destructivos (rojo por defecto)
+    flexDirection: 'row',
+    backgroundColor: theme.error, // Color por defecto para eliminar
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10, // Margen superior por defecto
+    minHeight: 48,
   },
   buttonDisabled: {
     backgroundColor: theme.border,
+    opacity: 0.7,
   },
   buttonTextPrimary: {
     color: theme.textLight,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
   },
   membersList: {
-    marginTop: 10,
+    marginTop: 8,
   },
   memberItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: theme.borderLight,
+    borderBottomColor: theme.borderLightest || '#f0f0f0',
   },
   memberInfo: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   memberIcon: {
-    marginRight: 12,
+    marginRight: 10,
   },
   memberName: {
-    fontSize: 16,
+    fontSize: 15,
     color: theme.textPrimary,
   },
   removeButton: {
-    padding: 8,
+    padding: 6,
   },
   infoText: {
-    fontSize: 15,
+    fontSize: 14,
     color: theme.textSecondary,
     textAlign: 'center',
-    marginVertical: 15,
-    lineHeight: 22,
+    marginVertical: 12,
+    lineHeight: 20,
   },
   infoTextSmall: {
-    fontSize: 13,
+    fontSize: 12,
     color: theme.textSecondary,
     textAlign: 'center',
-    marginBottom: 15,
+    marginTop: 5,
+    marginBottom: 10,
   },
   centeredMessageContainer: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,
-      marginTop: 50,
+      marginTop: 30,
   },
   dropdown: {
-    height: 50,
+    height: 48,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 15,
-    backgroundColor: theme.inputBackground, // Coherencia con inputs
-    marginBottom: 15,
+    paddingHorizontal: 12,
+    backgroundColor: theme.inputBackground, 
+    marginBottom: 12,
+    borderColor: theme.border, // Añadido para consistencia
   },
   placeholderStyle: {
-    fontSize: 16,
+    fontSize: 15,
   },
   selectedTextStyle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '500',
+    color: theme.textPrimary, // Asegurar color
   },
-  iconStyle: { // Para la flecha del dropdown
-    width: 24,
-    height: 24,
+  iconStyle: { 
+    width: 22,
+    height: 22,
   },
-  inputSearchStyle: { // Para el campo de búsqueda dentro del dropdown
-    height: 45,
-    fontSize: 16,
+  inputSearchStyle: { 
+    height: 42,
+    fontSize: 15,
     borderRadius: 8,
     borderColor: theme.border,
+    color: theme.textPrimary, // Asegurar color de texto en búsqueda
   },
-  dropdownIcon: { // Para el icono a la izquierda del dropdown
+  dropdownIcon: { 
     marginRight: 10,
+  },
+  requestItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.borderLightest || '#f0f0f0',
+  },
+  requestName: {
+    fontSize: 15,
+    color: theme.textPrimary,
+    flex: 1,
+  },
+  requestActions: {
+    flexDirection: 'row',
+  },
+  actionButtonSmall: {
+    padding: 8,
+    borderRadius: 20,
+    marginLeft: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   globalLoader: {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    transform: [{ translateX: -15 }, { translateY: -15 }], // Centrar aprox.
+    transform: [{ translateX: -15 }, { translateY: -15 }], 
   }
 });
