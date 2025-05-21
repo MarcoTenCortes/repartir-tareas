@@ -19,8 +19,7 @@ import { useTheme } from '../context/ThemeContext';
 const AVAILABLE_SHAPES = ['rectangle', 'circle'];
 const MIN_ROOM_SIZE = 40;
 const MAX_ROOM_SIZE = 250;
-// const SNAP_DISTANCE_THRESHOLD = 25; // Not used in the "overlap and snap to edge" logic
-const SNAP_DURATION_HIGHLIGHT_MS = 700; // How long the yellow highlight stays after snap
+const SNAP_DURATION_HIGHLIGHT_MS = 700; 
 
 // --- DraggableRoomComponent ---
 const DraggableRoomComponent = ({
@@ -79,8 +78,7 @@ const DraggableRoomComponent = ({
     .onUpdate((event) => {
       translateX.value = dragStartX.value + event.translationX;
       translateY.value = dragStartY.value + event.translationY;
-      // For continuous highlight during drag (optional, can be performance intensive):
-      // runOnJS(onDragEnd)(room.id, { x: translateX.value, y: translateY.value }, 'active_drag');
+
     })
     .onEnd(() => {
       if (onDragEnd) {
@@ -97,7 +95,7 @@ const DraggableRoomComponent = ({
       if (onUpdateRoomGestureProperties) {
         runOnJS(onUpdateRoomGestureProperties)(room.id, { width: finalWidth, height: finalHeight });
       }
-      scale.value = 1; // Reset for next pinch relative to new base size
+      scale.value = 1; 
     });
 
   const rotationGesture = Gesture.Rotation()
@@ -107,7 +105,7 @@ const DraggableRoomComponent = ({
       if (onUpdateRoomGestureProperties) {
         runOnJS(onUpdateRoomGestureProperties)(room.id, { rotation: newRotationDegrees });
       }
-      rotation.value = 0; // Reset gesture delta
+      rotation.value = 0; 
     });
 
   const doubleTapGesture = Gesture.Tap().numberOfTaps(2).maxDuration(250)
@@ -137,7 +135,7 @@ const DraggableRoomComponent = ({
   );
 };
 
-// --- Styles (getScreenStyles) ---
+
 const getScreenStyles = (theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
   listHeaderContainer: { padding: 16 },
@@ -164,8 +162,7 @@ const getScreenStyles = (theme) => StyleSheet.create({
   emptyText: { textAlign: 'center', color: theme.textSecondary, fontSize: 16, paddingHorizontal: 16 },
 });
 
-// --- ListHeaderComponent ---
-// (No changes from previous version)
+
 const ListHeaderComponent = React.memo(({
   currentGroup, rooms, newRoomName, setNewRoomName, handleCreateRoom,
   selectedRoom, handleSelectRoomForEditing, newTaskName, setNewTaskName, handleCreateTaskForSelectedRoom,
@@ -178,20 +175,20 @@ const ListHeaderComponent = React.memo(({
 });
 
 
-// --- TasksScreen ---
+
 export default function TasksScreen() {
   const { user } = useContext(UserContext);
   const {
     currentGroup, rooms, createRoom, updateRoomPosition, updateRoomProperties, deleteRoom,
     tasks: allTasks, createTask, assignTaskToUser, unassignTask, deleteTask: deleteTaskFromContext
   } = useContext(GroupContext);
-  const { theme } = useTheme(); // Ensure theme is available for highlight colors
+  const { theme } = useTheme(); 
 
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [newTaskName, setNewTaskName] = useState('');
   const [highlightedRoomIds, setHighlightedRoomIds] = useState(new Set());
-  const snapHighlightTimers = useRef({}); // To manage highlight removal timeouts
+  const snapHighlightTimers = useRef({}); 
 
   const styles = useMemo(() => getScreenStyles(theme), [theme]);
   const mapContainerLayout = useSharedValue({ width: 0, height: 0 });
@@ -209,7 +206,7 @@ export default function TasksScreen() {
     const draggedRoomData = rooms.find(r => r.id === draggedRoomId);
     if (!draggedRoomData) return;
 
-    // Clear any existing highlight timer for the dragged room and its highlight state
+  
     if (snapHighlightTimers.current[draggedRoomId]) {
       clearTimeout(snapHighlightTimers.current[draggedRoomId]);
       delete snapHighlightTimers.current[draggedRoomId];
@@ -224,8 +221,7 @@ export default function TasksScreen() {
     });
 
     if (gestureState === 'start') {
-      // Potentially clear highlights of rooms that *were* targets of this room if desired.
-      // For now, just handling the dragged room is simpler.
+
       return; 
     }
 
@@ -251,25 +247,25 @@ export default function TasksScreen() {
         const dRoomCenterX = dRoom.x + dRoom.width / 2;
         const dRoomCenterY = dRoom.y + dRoom.height / 2;
 
-        // Check if center of dragged room is within bounds of target room
+        
         if (dRoomCenterX >= tRoom.x && dRoomCenterX < tRoom.x + tRoom.width &&
             dRoomCenterY >= tRoom.y && dRoomCenterY < tRoom.y + tRoom.height) {
           
-          snappedToTarget = tRoom; // Store the target room
+          snappedToTarget = tRoom; 
 
-          // Calculate potential snap positions to the edges of tRoom
+          
           const snapPositions = [
-            { x: tRoom.x - dRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 }, // Left of target
-            { x: tRoom.x + tRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 },// Right of target
-            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y - dRoom.height },  // Top of target
-            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y + tRoom.height },// Bottom of target
+            { x: tRoom.x - dRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 }, 
+            { x: tRoom.x + tRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 },
+            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y - dRoom.height },  
+            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y + tRoom.height },
           ];
 
           let bestSnapPosition = null;
           let minDistanceSqToOriginalRelease = Infinity;
 
           snapPositions.forEach(sp => {
-            // Calculate distance from dRoom's original release point to this potential snap point
+         
             const distSq = (dRoom.x - sp.x) ** 2 + (dRoom.y - sp.y) ** 2;
             if (distSq < minDistanceSqToOriginalRelease) {
               minDistanceSqToOriginalRelease = distSq;
@@ -283,10 +279,10 @@ export default function TasksScreen() {
             
             updateRoomPosition(draggedRoomId, { x: finalSnapX, y: finalSnapY });
             
-            // Highlight both rooms
+            
             setHighlightedRoomIds(prev => new Set([...prev, draggedRoomId, tRoom.id]));
 
-            // Clear previous timers for these rooms
+            
             if (snapHighlightTimers.current[draggedRoomId]) clearTimeout(snapHighlightTimers.current[draggedRoomId]);
             if (snapHighlightTimers.current[tRoom.id]) clearTimeout(snapHighlightTimers.current[tRoom.id]);
             
@@ -303,15 +299,10 @@ export default function TasksScreen() {
             
             const timerCallback = clearHighlightCallback(draggedRoomId, tRoom.id);
             snapHighlightTimers.current[draggedRoomId] = setTimeout(timerCallback, SNAP_DURATION_HIGHLIGHT_MS);
-            // Store timer under one key, perhaps draggedRoomId, if they share a highlight duration
-            // Or manage them separately if needed. For simplicity, let's assume they share a timeout event.
-            // snapHighlightTimers.current[tRoom.id] = snapHighlightTimers.current[draggedRoomId]; 
-            // No, this is wrong. They need separate timer IDs to clear, but can share the callback logic.
-            // The current approach is: each room gets its own timer to clear itself from the set.
-            // Let's refine this: one timer for the pair.
+
             
-            // Revised timer logic: one timer for the pair.
-            const pairKey = [draggedRoomId, tRoom.id].sort().join('-'); // Consistent key for the pair
+
+            const pairKey = [draggedRoomId, tRoom.id].sort().join('-'); 
             if (snapHighlightTimers.current[pairKey]) clearTimeout(snapHighlightTimers.current[pairKey]);
             snapHighlightTimers.current[pairKey] = setTimeout(() => {
                  setHighlightedRoomIds(prev => {
@@ -323,38 +314,37 @@ export default function TasksScreen() {
                   delete snapHighlightTimers.current[pairKey];
             }, SNAP_DURATION_HIGHLIGHT_MS);
 
-            break; // Snapped, stop checking other rooms
+            break; 
           }
         }
       }
 
       if (!snappedToTarget) {
-        // No overlap snap, just move to constrained position based on release
+
         const constrainedX = Math.max(0, Math.min(releasePosition.x, (mapContainerLayout.value.width || Infinity) - dRoom.width));
         const constrainedY = Math.max(0, Math.min(releasePosition.y, (mapContainerLayout.value.height || Infinity) - dRoom.height));
         updateRoomPosition(draggedRoomId, { x: constrainedX, y: constrainedY });
-        // Ensure its highlight is cleared if not snapped (it might have been a target previously)
-        // This logic is already handled at the beginning of the function.
+
       }
     }
-  }, [currentGroup, rooms, updateRoomPosition, mapContainerLayout.value.width, mapContainerLayout.value.height, theme.warning]); // Added theme.warning to deps if used in style calculation
+  }, [currentGroup, rooms, updateRoomPosition, mapContainerLayout.value.width, mapContainerLayout.value.height, theme.warning]); 
 
   const handleSelectRoomForEditing = useCallback((room) => { setSelectedRoom(prev => (prev?.id === room.id ? null : room)); }, [setSelectedRoom]);
 const handleCreateTaskForSelectedRoom = useCallback(async () => {
-  // Validación del nombre de la tarea
+
   if (!newTaskName.trim()) {
     Alert.alert('Error', 'Nombre tarea vacío.');
     return;
   }
 
-  // Validación de selección de habitación
+
   if (!selectedRoom) {
     Alert.alert('Error', 'Selecciona hab.');
     return;
   }
 
   try {
-    // Crear la tarea y limpiar el campo
+
     await createTask(newTaskName, selectedRoom.id);
     setNewTaskName('');
   } catch (e) {
@@ -372,7 +362,7 @@ const tasksForSelectedRoom = useMemo(() => {
   const handleUpdateRoomGestureProperties = useCallback(async (roomId, newProps) => {
     if (!roomId || !newProps) return;
     
-    // Clear any highlight and its timer if properties are changed directly
+    
     const pairKeysToClear = Object.keys(snapHighlightTimers.current).filter(key => key.includes(roomId));
     pairKeysToClear.forEach(key => {
         clearTimeout(snapHighlightTimers.current[key]);
@@ -386,9 +376,7 @@ const tasksForSelectedRoom = useMemo(() => {
             newSet.delete(roomId);
             changed = true;
         }
-        // Also remove any room it was paired with for highlighting
-        // This part needs careful consideration to avoid unintended side effects
-        // For now, just removing the directly manipulated room's highlight
+
         return changed ? newSet : prev;
     });
 

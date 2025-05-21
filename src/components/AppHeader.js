@@ -1,7 +1,8 @@
+// FILE: src/components/AppHeader.js
 // src/components/AppHeader.js
 import React, { useContext } from 'react';
 import { View, Text, TouchableOpacity, Alert, StyleSheet, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons'; // Asegúrate de que esté importado
 import GroupSelector from './GroupSelector';
 import { UserContext } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
@@ -25,6 +26,8 @@ export default function AppHeader() {
   const userName = user ? user.name : '';
   const userFirstName = userName ? userName.split(' ')[0] : '';
 
+  const userIconName = user?.icon || 'person-circle-outline'; 
+
   return (
     <View style={[styles.headerContainer, { backgroundColor: theme.cardBackground, borderBottomColor: theme.border }]}>
       <View style={styles.groupSelectorContainer}>
@@ -34,7 +37,8 @@ export default function AppHeader() {
         {userFirstName ? (
           <Text style={[styles.greetingText, { color: theme.textPrimary }]}>¡Hola, {userFirstName}!</Text>
         ) : null}
-        <Ionicons name="person-circle-outline" size={28} color={theme.primary} />
+        {/* Usar el icono del usuario */}
+        <Ionicons name={userIconName} size={28} color={theme.primary} /> 
       </TouchableOpacity>
     </View>
   );
