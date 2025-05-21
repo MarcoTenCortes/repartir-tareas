@@ -43,7 +43,7 @@ function MainTabs() {
             );
           },
           tabBarLabelStyle: { paddingBottom: 4 },
-          tabBarStyle: { height: 60 },
+          tabBarStyle: { height: 70, paddingBottom: 20 },
           headerShown: false
         })}
       >
