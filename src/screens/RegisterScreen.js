@@ -16,18 +16,18 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { UserContext } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
-import { Ionicons } from '@expo/vector-icons'; // Asegúrate de que esté importado
+import { Ionicons } from '@expo/vector-icons';
 
-// Definir los iconos disponibles (puedes personalizarlos)
-const AVAILABLE_USER_ICONS = [
-  { name: 'person-circle-outline', family: 'Ionicons' }, // Icono por defecto
+// Definir y exportar los iconos disponibles
+export const AVAILABLE_USER_ICONS = [ // <<--- EXPORTAR
+  { name: 'person-circle-outline', family: 'Ionicons' }, 
   { name: 'happy-outline', family: 'Ionicons' },
   { name: 'leaf-outline', family: 'Ionicons' },
   { name: 'rocket-outline', family: 'Ionicons' },
   { name: 'sparkles-outline', family: 'Ionicons' },
   { name: 'star-outline', family: 'Ionicons' },
 ];
-const DEFAULT_ICON_NAME = 'person-circle-outline';
+export const DEFAULT_ICON_NAME = 'person-circle-outline'; // <<--- EXPORTAR
 
 export default function RegisterScreen({ navigation }) {
   const { user, register, logout } = useContext(UserContext);
@@ -38,7 +38,7 @@ export default function RegisterScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [selectedIconName, setSelectedIconName] = useState(DEFAULT_ICON_NAME); // <--- Nuevo estado
+  const [selectedIconName, setSelectedIconName] = useState(DEFAULT_ICON_NAME);
 
 
   if (user) {
@@ -66,7 +66,7 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
     try {
-      await register(name.trim(), email.trim(), password, selectedIconName); // <--- Pasar selectedIconName
+      await register(name.trim(), email.trim(), password, selectedIconName); 
       // La navegación se maneja automáticamente
     } catch (err) {
       Alert.alert('Error de Registro', err.message || 'No se pudo completar el registro.');
@@ -128,30 +128,29 @@ export default function RegisterScreen({ navigation }) {
 
           <Text style={styles.label}>Elige tu avatar:</Text>
           <View style={styles.iconSelectorContainer}>
-            {AVAILABLE_USER_ICONS.map((iconData) => (
+            {AVAILABLE_USER_ICONS.map((icon) => (
               <TouchableOpacity
-                key={iconData.name}
+                key={icon.name}
                 style={[
-                  styles.iconWrapper,
-                  selectedIconName === iconData.name && styles.selectedIconWrapper,
+                  styles.iconButton,
+                  selectedIconName === icon.name && styles.iconButtonSelected // Estilo para el icono seleccionado
                 ]}
-                onPress={() => setSelectedIconName(iconData.name)}
+                onPress={() => setSelectedIconName(icon.name)}
               >
                 <Ionicons 
-                  name={iconData.name} 
-                  size={40} 
-                  color={selectedIconName === iconData.name ? theme.primary : theme.textSecondary} 
+                    name={icon.name} 
+                    size={30} 
+                    color={selectedIconName === icon.name ? theme.primary : theme.textSecondary} // Color dinámico
                 />
               </TouchableOpacity>
             ))}
           </View>
 
-          <Animatable.View animation="pulse" iterationCount="infinite" delay={1000} duration={1500}>
-            <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
-              <Text style={styles.buttonTextPrimary}>Crear cuenta</Text>
-            </TouchableOpacity>
-          </Animatable.View>
 
+          <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
+            <Text style={styles.buttonTextPrimary}>Registrarse</Text>
+          </TouchableOpacity>
+         
           <TouchableOpacity style={styles.buttonSecondary} onPress={() => navigation.navigate('Login')}>
             <Text style={styles.buttonTextSecondary}>¿Ya tienes cuenta? <Text style={styles.linkText}>Inicia sesión</Text></Text>
           </TouchableOpacity>
@@ -188,7 +187,7 @@ const getStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.cardBackground,
     borderRadius: 16,
     padding: 25,
-    shadowColor: theme.shadowColor,
+    shadowColor: theme.shadowColor || '#000',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.1,
     shadowRadius: 15,
@@ -228,7 +227,7 @@ const getStyles = (theme) => StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 15, 
     shadowColor: theme.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -236,12 +235,12 @@ const getStyles = (theme) => StyleSheet.create({
     elevation: 6,
   },
   buttonTextPrimary: {
-    color: theme.textLight, // Asumiendo que tienes textLight en tu tema para texto sobre fondo primario
+    color: theme.textLight,
     fontSize: 16,
     fontWeight: 'bold',
   },
   buttonSecondary: {
-    paddingVertical: 10,
+    paddingVertical: 10, 
     alignItems: 'center',
   },
   buttonTextSecondary: {
@@ -249,14 +248,15 @@ const getStyles = (theme) => StyleSheet.create({
     fontSize: 15,
   },
   linkText: {
-    color: theme.accent, // Usar color de acento para el enlace
+    color: theme.accent,
     fontWeight: 'bold',
   },
-  loggedInContainer: { // Estilo para cuando el usuario ya está logueado (menos común en Register)
+  loggedInContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: theme.background, 
   },
   info: {
     fontSize: 16,
@@ -264,28 +264,33 @@ const getStyles = (theme) => StyleSheet.create({
     textAlign: 'center',
     color: theme.textSecondary,
   },
-  // Estilos para el selector de iconos
+  container: { 
+    flex: 1,
+    backgroundColor: theme.background, 
+  },
   label: {
     fontSize: 16,
-    color: theme.textPrimary,
+    color: theme.textSecondary,
     marginBottom: 10,
-    marginTop: 15,
+    marginTop: 5,
   },
   iconSelectorContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-around',
+    justifyContent: 'space-around', // O 'flex-start' para alinear a la izquierda
     marginBottom: 20,
   },
-  iconWrapper: {
+  iconButton: {
     padding: 10,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    margin: 5,
+    borderRadius: 8, // Hacerlo más redondeado
+    borderWidth: 1,
+    borderColor: theme.border, // Un borde sutil
+    margin: 5, // Espacio entre iconos
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  selectedIconWrapper: {
-    borderColor: theme.primary,
-    backgroundColor: theme.inputBackground,
+  iconButtonSelected: {
+    borderColor: theme.primary, // Borde más prominente para el seleccionado
+    backgroundColor: theme.primaryLight, // Un color de fondo sutil
   },
 });
