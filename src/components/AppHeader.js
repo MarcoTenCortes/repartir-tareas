@@ -1,31 +1,23 @@
 // FILE: src/components/AppHeader.js
-// src/components/AppHeader.js
 import React, { useContext } from 'react';
-import { View, Text, TouchableOpacity, Alert, StyleSheet, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // Asegúrate de que esté importado
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native'; // Quitar Alert si ya no se usa aquí
+import { Ionicons } from '@expo/vector-icons';
 import GroupSelector from './GroupSelector';
 import { UserContext } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
+import { useNavigation } from '@react-navigation/native'; // <<--- IMPORTAR useNavigation
 
 export default function AppHeader() {
-  const { user, logout } = useContext(UserContext);
+  const { user } = useContext(UserContext); // logout ya no se usa aquí directamente
   const { theme } = useTheme();
+  const navigation = useNavigation(); // <<--- OBTENER NAVEGACIÓN
 
   const handleUserPress = () => {
-    Alert.alert(
-      'Cuenta',
-      '¿Quieres cerrar sesión?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Cerrar sesión', style: 'destructive', onPress: () => logout() }
-      ],
-      { cancelable: true }
-    );
+    navigation.navigate('UserProfile'); // <<--- NAVEGAR A LA PANTALLA DE PERFIL
   };
 
   const userName = user ? user.name : '';
   const userFirstName = userName ? userName.split(' ')[0] : '';
-
   const userIconName = user?.icon || 'person-circle-outline'; 
 
   return (
@@ -37,7 +29,6 @@ export default function AppHeader() {
         {userFirstName ? (
           <Text style={[styles.greetingText, { color: theme.textPrimary }]}>¡Hola, {userFirstName}!</Text>
         ) : null}
-        {/* Usar el icono del usuario */}
         <Ionicons name={userIconName} size={28} color={theme.primary} /> 
       </TouchableOpacity>
     </View>

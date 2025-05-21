@@ -15,8 +15,10 @@ import GroupSearchScreen from '../screens/GroupSearchScreen';
 import GroupCreateScreen from '../screens/GroupCreateScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
-import { UserContext } from '../context/UserContext';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen'; 
+import UserProfileScreen from '../screens/UserProfileScreen'; // <<--- IMPORTAR NUEVA PANTALLA
+import { UserContext } from '../context/UserContext';
+
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -68,6 +70,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="BuscarGrupo" component={GroupSearchScreen} />
             <Stack.Screen name="CrearGrupo" component={GroupCreateScreen} />
+            <Stack.Screen name="UserProfile" component={UserProfileScreen} /> 
           </>
         ) : (
           <>

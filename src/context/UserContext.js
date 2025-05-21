@@ -1,12 +1,15 @@
 // FILE: src/context/UserContext.js
-import React, { createContext, useState, useEffect, useRef } from 'react'; // Import useRef
+import React, { createContext, useState, useEffect, useRef } from 'react';
 import { auth, db } from '../services/firebase';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   onAuthStateChanged,
   updateProfile,
-  signOut
+  signOut,
+  EmailAuthProvider, // Necesario para reautenticar
+  reauthenticateWithCredential, // Necesario para reautenticar
+  updatePassword // Necesario para cambiar contraseña
 } from 'firebase/auth';
 import {
   collection,
@@ -16,7 +19,7 @@ import {
   onSnapshot,
   query,
   where,
-  updateDoc,
+  updateDoc, // Asegúrate de que updateDoc está importado
   arrayUnion,
   arrayRemove,
   getDocs,
@@ -29,11 +32,10 @@ export const UserContext = createContext();
 export function UserProvider({ children }) {
   const [user, setUser] = useState(null);
   const [groups, setGroups] = useState([]);
-  const groupListenerUnsubscribeRef = useRef(null); // Ref to hold group listener unsubscribe function
+  const groupListenerUnsubscribeRef = useRef(null);
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
-      // Cleanup previous group listener if it exists
       if (groupListenerUnsubscribeRef.current) {
         groupListenerUnsubscribeRef.current();
         groupListenerUnsubscribeRef.current = null;
@@ -42,7 +44,7 @@ export function UserProvider({ children }) {
       if (u) {
         let displayNameFromDb = null;
         let userEmail = u.email;
-        let selectedIconFromDb = 'person-circle-outline'; // Default icon
+        let selectedIconFromDb = 'person-circle-outline'; 
 
         try {
             const userDocRef = doc(db, 'users', u.uid);
@@ -53,7 +55,7 @@ export function UserProvider({ children }) {
                 if (userData.selectedIcon) {
                     selectedIconFromDb = userData.selectedIcon;
                 }
-                if (!userEmail && userData.email) { // Fallback for email
+                if (!userEmail && userData.email) { 
                     userEmail = userData.email;
                 }
             }
@@ -71,43 +73,34 @@ export function UserProvider({ children }) {
             icon: resolvedIcon
         });
 
-        // Setup new group listener for the current user 'u'
         const groupsQuery = query(
           collection(db, 'groups'),
           where('members', 'array-contains', u.uid)
         );
-        // Assign the new unsubscribe function to the ref
         groupListenerUnsubscribeRef.current = onSnapshot(groupsQuery, snap => {
           setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         }, error => {
             console.error("Error escuchando grupos:", error);
             setGroups([]);
         });
-      } else { // User is signed out
+      } else { 
         setUser(null);
-        setGroups([]); // Clear groups
-        // Group listener is already cleaned up at the start of this callback or will be by useEffect cleanup
+        setGroups([]); 
       }
     });
     
-    // Cleanup function for the useEffect: Unsubscribe from auth and any active group listener
     return () => {
       unsubscribeAuth();
       if (groupListenerUnsubscribeRef.current) {
         groupListenerUnsubscribeRef.current();
       }
     };
-  }, []); // Empty dependency array: effect runs once on mount, cleans up on unmount
+  }, []);
 
   const register = async (name, email, password, iconName) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    
-    // Update Firebase Auth profile (displayName)
     await updateProfile(cred.user, { displayName: name });
-
     const finalIconName = iconName || 'person-circle-outline';
-    
-    // Store/Update user details in Firestore (including displayName and selectedIcon)
     const userDocRef = doc(db, 'users', cred.user.uid);
     await setDoc(userDocRef, {
       uid: cred.user.uid,
@@ -116,42 +109,79 @@ export function UserProvider({ children }) {
       selectedIcon: finalIconName,
       createdAt: serverTimestamp()
     }, { merge: true });
-
-    // Force reload of the Firebase Auth user object from server.
-    // This helps ensure that auth.currentUser and the 'u' object in
-    // onAuthStateChanged listeners reflect profile updates sooner.
     try {
-        if (auth.currentUser) { // currentUser should be cred.user at this point
+        if (auth.currentUser) {
             await auth.currentUser.reload();
         }
     } catch (reloadError) {
         console.warn("User reload failed after registration:", reloadError);
     }
-    
-    // Explicitly set the user state in the context AFTER all backend updates.
-    // This ensures the UI reflects the correct name and icon *immediately* after registration.
     setUser({
       uid: cred.user.uid,
-      name: name,             // Use the definitive name passed to register
+      name: name,
       email: email,
-      icon: finalIconName     // Use the definitive icon
+      icon: finalIconName
     });
-    // The onAuthStateChanged listener will also fire and should confirm this state,
-    // and it will handle setting up group listeners.
   };
 
   const login = async (email, password) => {
     await signInWithEmailAndPassword(auth, email, password);
-    // onAuthStateChanged will handle setting user state and group listeners.
-    // Consider auth.currentUser.reload() here too if experiencing staleness after login.
   };
 
   const logout = async () => {
     await signOut(auth);
-    // onAuthStateChanged will set user to null and clear groups.
   };
 
+  const updateUserProfile = async (profileData) => {
+    if (!auth.currentUser) throw new Error("No hay usuario autenticado.");
+    
+    const updates = {};
+    const firestoreUpdates = {};
+
+    if (profileData.name) {
+      await updateProfile(auth.currentUser, { displayName: profileData.name });
+      firestoreUpdates.displayName = profileData.name;
+      updates.name = profileData.name;
+    }
+    if (profileData.iconName) {
+      firestoreUpdates.selectedIcon = profileData.iconName;
+      updates.icon = profileData.iconName;
+    }
+
+    if (Object.keys(firestoreUpdates).length > 0) {
+      const userDocRef = doc(db, 'users', auth.currentUser.uid);
+      await updateDoc(userDocRef, firestoreUpdates);
+    }
+    
+    // Actualizar el estado local del usuario
+    setUser(prevUser => ({ ...prevUser, ...updates }));
+  };
+
+  const changeUserPassword = async (currentPassword, newPassword) => {
+    if (!auth.currentUser) throw new Error("No hay usuario autenticado.");
+    if (!currentPassword || !newPassword) throw new Error("Se requieren la contraseña actual y la nueva.");
+
+    const userAuth = auth.currentUser;
+    const credential = EmailAuthProvider.credential(userAuth.email, currentPassword);
+
+    try {
+      // Reautenticar al usuario
+      await reauthenticateWithCredential(userAuth, credential);
+      // Si la reautenticación es exitosa, cambiar la contraseña
+      await updatePassword(userAuth, newPassword);
+    } catch (error) {
+      console.error("Error changing password:", error);
+      if (error.code === 'auth/wrong-password') {
+        throw new Error("La contraseña actual es incorrecta.");
+      } else if (error.code === 'auth/requires-recent-login') {
+        throw new Error("Esta operación es sensible y requiere autenticación reciente. Por favor, vuelve a iniciar sesión.");
+      }
+      throw new Error("Error al cambiar la contraseña: " + error.message);
+    }
+  };
+  
   const createGroup = async (groupName) => {
+    // ... (sin cambios)
     if (!user) throw new Error('Usuario no autenticado. No se puede crear el grupo.');
     if (!groupName || groupName.trim() === '') throw new Error('El nombre del grupo no puede estar vacío.');
 
@@ -195,6 +225,7 @@ export function UserProvider({ children }) {
   };
 
   const joinGroup = async (groupIdToJoin, groupNameToJoin) => {
+    // ... (sin cambios)
     if (!user) throw new Error('Usuario no autenticado');
     if (!groupIdToJoin) throw new Error('ID de grupo no proporcionado.');
 
@@ -230,6 +261,7 @@ export function UserProvider({ children }) {
   };
 
   const leaveGroup = async (groupId) => {
+    // ... (sin cambios)
     if (!user) throw new Error("Usuario no autenticado.");
     if (!groupId) throw new Error("ID de grupo no proporcionado.");
 
@@ -245,6 +277,7 @@ export function UserProvider({ children }) {
   };
 
   const getGroupByName = async (name) => {
+    // ... (sin cambios)
     if (!name || name.trim() === '') return [];
     const normalizedQueryName = name.trim().toLowerCase();
     const q = query(
@@ -262,6 +295,8 @@ export function UserProvider({ children }) {
       register,
       login,
       logout,
+      updateUserProfile, // << AÑADIR
+      changeUserPassword, // << AÑADIR
       createGroup,
       joinGroup,
       leaveGroup,
