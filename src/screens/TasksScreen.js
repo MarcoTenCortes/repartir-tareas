@@ -1,14 +1,13 @@
 // src/screens/TasksScreen.js
-import React, { useState, useContext, useMemo, useCallback } from 'react';
+import React, { useState, useContext, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, Button, FlatList, Alert,
-  StyleSheet, TouchableOpacity, Dimensions,
+  StyleSheet, Dimensions, TouchableOpacity
 } from 'react-native';
-import { PanGestureHandler } from 'react-native-gesture-handler';
+import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  useAnimatedGestureHandler,
   runOnJS,
 } from 'react-native-reanimated';
 
@@ -17,367 +16,402 @@ import { GroupContext } from '../context/GroupContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-// Componente DraggableRoom reutilizable
-const DraggableRoomComponent = ({ room, onSelectRoom, onDragEnd, selected, initialPosition, styles }) => {
+const AVAILABLE_SHAPES = ['rectangle', 'circle'];
+const MIN_ROOM_SIZE = 40;
+const MAX_ROOM_SIZE = 250;
+// const SNAP_DISTANCE_THRESHOLD = 25; // Not used in the "overlap and snap to edge" logic
+const SNAP_DURATION_HIGHLIGHT_MS = 700; // How long the yellow highlight stays after snap
+
+// --- DraggableRoomComponent ---
+const DraggableRoomComponent = ({
+  room, onSelectRoom, onDragEnd, onUpdateRoomGestureProperties,
+  selected, initialPosition, styles, isHighlighted // isHighlighted prop
+}) => {
   const translateX = useSharedValue(initialPosition.x);
   const translateY = useSharedValue(initialPosition.y);
-  const databaseStartX = useSharedValue(initialPosition.x);
-  const databaseStartY = useSharedValue(initialPosition.y);
+  const dragStartX = useSharedValue(0);
+  const dragStartY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const rotation = useSharedValue(0); // Gesture rotation delta in radians
+  const savedRotation = useSharedValue(Number(room.rotation) || 0); // Committed rotation in degrees
+  const { theme } = useTheme();
 
-  const gestureHandler = useAnimatedGestureHandler({
-    onStart: (_, ctx) => {
-      ctx.startX = translateX.value;
-      ctx.startY = translateY.value;
-      databaseStartX.value = initialPosition.x;
-      databaseStartY.value = initialPosition.y;
-    },
-    onActive: (event, ctx) => {
-      translateX.value = ctx.startX + event.translationX;
-      translateY.value = ctx.startY + event.translationY;
-    },
-    onEnd: (event) => {
-      const finalX = databaseStartX.value + event.translationX;
-      const finalY = databaseStartY.value + event.translationY;
-
-      if (onDragEnd) {
-        runOnJS(onDragEnd)({ x: finalX, y: finalY });
-      }
-    },
-  });
+  useEffect(() => {
+    translateX.value = initialPosition.x;
+    translateY.value = initialPosition.y;
+    scale.value = 1; // Reset gesture scale
+    rotation.value = 0; // Reset gesture rotation delta
+    savedRotation.value = Number(room.rotation) || 0; // Sync with DB rotation
+  }, [room.id, initialPosition.x, initialPosition.y, room.rotation]);
 
   const animatedStyle = useAnimatedStyle(() => {
+    const currentWidth = (Number(room.width) || 100) * scale.value;
+    const currentHeight = (Number(room.height) || 60) * scale.value;
+    const currentRotationDegrees = savedRotation.value + (rotation.value * 180 / Math.PI);
+
+    let dynamicBorderColor = selected ? (theme.error || 'red') : (theme.accent || 'blue');
+    if (isHighlighted) {
+      dynamicBorderColor = theme.warning || 'yellow'; // Use theme.warning for highlight
+    }
+
     return {
+      width: Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, currentWidth)),
+      height: Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, currentHeight)),
+      borderColor: dynamicBorderColor,
+      borderWidth: isHighlighted || selected ? 3 : 1, // Thicker border
+      borderRadius: room.shape === 'circle'
+        ? Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, Math.max(currentWidth, currentHeight))) / 2
+        : 8,
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
+        { rotate: `${currentRotationDegrees}deg` },
       ],
     };
   });
 
+  const panGesture = Gesture.Pan()
+    .onBegin(() => {
+      dragStartX.value = translateX.value;
+      dragStartY.value = translateY.value;
+      runOnJS(onDragEnd)(room.id, { x: translateX.value, y: translateY.value }, 'start');
+    })
+    .onUpdate((event) => {
+      translateX.value = dragStartX.value + event.translationX;
+      translateY.value = dragStartY.value + event.translationY;
+      // For continuous highlight during drag (optional, can be performance intensive):
+      // runOnJS(onDragEnd)(room.id, { x: translateX.value, y: translateY.value }, 'active_drag');
+    })
+    .onEnd(() => {
+      if (onDragEnd) {
+        runOnJS(onDragEnd)(room.id, { x: translateX.value, y: translateY.value }, 'end');
+      }
+    })
+    .shouldCancelWhenOutside(false);
+
+  const pinchGesture = Gesture.Pinch()
+    .onUpdate((event) => { scale.value = event.scale; })
+    .onEnd(() => {
+      const finalWidth = Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, (Number(room.width) || 100) * scale.value));
+      const finalHeight = Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, (Number(room.height) || 60) * scale.value));
+      if (onUpdateRoomGestureProperties) {
+        runOnJS(onUpdateRoomGestureProperties)(room.id, { width: finalWidth, height: finalHeight });
+      }
+      scale.value = 1; // Reset for next pinch relative to new base size
+    });
+
+  const rotationGesture = Gesture.Rotation()
+    .onUpdate((event) => { rotation.value = event.rotation; })
+    .onEnd(() => {
+      const newRotationDegrees = (savedRotation.value + (rotation.value * 180 / Math.PI)) % 360;
+      if (onUpdateRoomGestureProperties) {
+        runOnJS(onUpdateRoomGestureProperties)(room.id, { rotation: newRotationDegrees });
+      }
+      rotation.value = 0; // Reset gesture delta
+    });
+
+  const doubleTapGesture = Gesture.Tap().numberOfTaps(2).maxDuration(250)
+    .onEnd((_event, success) => {
+      if (success && onUpdateRoomGestureProperties) {
+        const currentIndex = AVAILABLE_SHAPES.indexOf(room.shape || 'rectangle');
+        const nextIndex = (currentIndex + 1) % AVAILABLE_SHAPES.length;
+        runOnJS(onUpdateRoomGestureProperties)(room.id, { shape: AVAILABLE_SHAPES[nextIndex] });
+      }
+    });
+
+  const singleTapGesture = Gesture.Tap().maxDuration(250)
+    .onEnd((_event, success) => { if (success && onSelectRoom) runOnJS(onSelectRoom)(); });
+
+  const continuousGestures = Gesture.Simultaneous(panGesture, pinchGesture, rotationGesture);
+  const tapGestures = Gesture.Exclusive(doubleTapGesture, singleTapGesture);
+  const composedGestures = Gesture.Race(continuousGestures, tapGestures);
+
   return (
-    <PanGestureHandler onGestureEvent={gestureHandler}>
+    <GestureDetector gesture={composedGestures}>
       <Animated.View style={[styles.draggableWrapper, animatedStyle]}>
-        <TouchableOpacity onPress={onSelectRoom}>
-          <View style={[styles.room, selected && styles.selectedRoom]}>
-            <Text style={styles.roomName}>{room.name}</Text>
-          </View>
-        </TouchableOpacity>
+        <View style={[styles.roomBase, { backgroundColor: room.color || (theme.primary || 'lightblue') }]}>
+          <Text style={styles.roomName}>{room.name}</Text>
+        </View>
       </Animated.View>
-    </PanGestureHandler>
+    </GestureDetector>
   );
 };
 
-// Función para generar estilos dependientes del tema
+// --- Styles (getScreenStyles) ---
 const getScreenStyles = (theme) => StyleSheet.create({
-  container: { // Estilo para el FlatList principal
-    flex: 1,
-    backgroundColor: theme.background,
-  },
-  listHeaderContainer: {
-    padding: 16,
-  },
-  inputRow: {
-    flexDirection: 'row',
-    marginBottom: 12,
-    alignItems: 'center'
-  },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: theme.border || '#ccc',
-    padding: 10,
-    marginRight: 8,
-    borderRadius: 8,
-    color: theme.textPrimary,
-    backgroundColor: theme.inputBackground
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 16,
-    marginBottom: 8,
-    color: theme.textPrimary,
-  },
-  mapContainer: {
-    height: 300,
-    borderWidth: 1,
-    borderColor: theme.border || 'grey',
-    backgroundColor: theme.cardBackground || '#f0f0f0',
-    position: 'relative',
-    overflow: 'hidden',
-    marginBottom: 20,
-    borderRadius: 8,
-  },
-  draggableWrapper: {
-    position: 'absolute',
-  },
-  room: {
-    padding: 12,
-    backgroundColor: theme.primary || 'lightblue',
-    borderWidth: 1,
-    borderColor: theme.accent || 'blue',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 100,
-    minHeight: 60,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  selectedRoom: {
-    borderColor: theme.error || 'red',
-    borderWidth: 3,
-  },
-  roomName: {
-    fontWeight: 'bold',
-    color: theme.textLight || '#fff',
-    fontSize: 14,
-  },
-  tasksSectionHeader: {
-    marginTop: 20,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: theme.border || '#e0e0e0',
-  },
-  taskItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border || '#eee',
-    backgroundColor: theme.background,
-  },
-  taskName: {
-    flex: 1,
-    fontSize: 16,
-    color: theme.textPrimary,
-  },
-  assignButton: {
-    marginLeft: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: theme.primary || '#007bff',
-    borderRadius: 5,
-  },
-  assignButtonText: {
-    color: theme.textLight || 'white',
-    fontSize: 14,
-  },
-  assignedToText: {
-    fontStyle: 'italic',
-    color: theme.textSecondary || 'gray',
-    marginRight: 8,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    alignItems: 'center'
-  },
-  actionIcon: {
-    marginLeft: 10,
-    padding: 5,
-  },
-  emptyTextContainer: { // Contenedor para el mensaje de lista vacía
-    flex: 1, // Para que ocupe el espacio vertical restante en el contentContainer del FlatList
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20, // Espacio vertical dentro del contenedor
-  },
-  emptyText: { // Estilo solo para el texto
-    textAlign: 'center',
-    color: theme.textSecondary,
-    fontSize: 16,
-    paddingHorizontal: 16, // Espacio horizontal para el texto
-  },
+  container: { flex: 1, backgroundColor: theme.background },
+  listHeaderContainer: { padding: 16 },
+  inputRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'center' },
+  input: { flex: 1, borderWidth: 1, borderColor: theme.border || '#ccc', padding: 10, marginRight: 8, borderRadius: 8, color: theme.textPrimary, backgroundColor: theme.inputBackground },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 16, marginBottom: 8, color: theme.textPrimary },
+  mapContainer: { height: 300, borderWidth: 1, borderColor: theme.border || 'grey', backgroundColor: theme.cardBackground || '#f0f0f0', position: 'relative', overflow: 'hidden', marginBottom: 20, borderRadius: 8 },
+  draggableWrapper: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  roomBase: { padding: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, overflow: 'hidden' },
+  selectedRoom: {}, // Not strictly needed as animatedStyle handles selection border
+  roomName: { fontWeight: 'bold', color: theme.textLight || '#fff', fontSize: 14 },
+  tasksSectionHeader: { marginTop: 20, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border || '#e0e0e0' },
+  deleteRoomButtonContainer: { marginVertical: 15, paddingHorizontal: 16, alignItems: 'center' },
+  deleteRoomButton: { backgroundColor: theme.error || 'red', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 5, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%' },
+  deleteRoomButtonText: { color: theme.textLight || '#fff', fontSize: 15, fontWeight: 'bold', marginLeft: 8 },
+  taskItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: theme.border || '#eee', backgroundColor: theme.background },
+  taskName: { flex: 1, fontSize: 16, color: theme.textPrimary },
+  assignButton: { marginLeft: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: theme.primary || '#007bff', borderRadius: 5 },
+  assignButtonText: { color: theme.textLight || 'white', fontSize: 14 },
+  assignedToText: { fontStyle: 'italic', color: theme.textSecondary || 'gray', marginRight: 8 },
+  actionsContainer: { flexDirection: 'row', alignItems: 'center' },
+  actionIcon: { marginLeft: 10, padding: 5 },
+  emptyTextContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 },
+  emptyText: { textAlign: 'center', color: theme.textSecondary, fontSize: 16, paddingHorizontal: 16 },
 });
 
+// --- ListHeaderComponent ---
+// (No changes from previous version)
 const ListHeaderComponent = React.memo(({
-  currentGroup,
-  rooms,
-  newRoomName,
-  setNewRoomName,
-  handleCreateRoom,
-  selectedRoom,
-  handleSelectRoom,
-  newTaskName,
-  setNewTaskName,
-  handleCreateTaskForSelectedRoom,
-  mapContainerLayout,
-  handleMapLayout,
-  handleRoomDragRelease,
-  styles,
-  theme
+  currentGroup, rooms, newRoomName, setNewRoomName, handleCreateRoom,
+  selectedRoom, handleSelectRoomForEditing, newTaskName, setNewTaskName, handleCreateTaskForSelectedRoom,
+  mapContainerLayout, handleMapLayout, handleRoomDragRelease, onUpdateRoomGestureProperties,
+  highlightedRoomIds, styles, theme,
 }) => {
-  return (
-    <View style={styles.listHeaderContainer}>
-      <Text style={styles.sectionTitle}>Habitaciones del Grupo</Text>
-      {!currentGroup && <Text style={styles.emptyText}>Por favor, selecciona un grupo.</Text>}
-      {currentGroup && (
-        <>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="Nombre nueva habitación"
-              placeholderTextColor={theme.placeholder}
-              value={newRoomName}
-              onChangeText={setNewRoomName}
-            />
-            <Button title="Crear Habitación" onPress={handleCreateRoom} color={theme.primary} />
-          </View>
-
-          <View style={styles.mapContainer} onLayout={handleMapLayout}>
-            {rooms.map((room) => (
-              <DraggableRoomComponent
-                key={room.id}
-                room={room}
-                initialPosition={room.position || { x: 0, y: 0 }}
-                onSelectRoom={() => handleSelectRoom(room)}
-                onDragEnd={(newPosition) => handleRoomDragRelease(room.id, newPosition)}
-                selected={selectedRoom?.id === room.id}
-                styles={styles}
-              />
-            ))}
-          </View>
-        </>
-      )}
-
-      {selectedRoom && (
-        <View style={styles.tasksSectionHeader}>
-          <Text style={styles.sectionTitle}>Tareas para: {selectedRoom.name}</Text>
-          <View style={styles.inputRow}>
-            <TextInput
-              style={styles.input}
-              placeholder="Nueva tarea para esta habitación"
-              value={newTaskName}
-              onChangeText={setNewTaskName}
-            />
-            <Button title="Añadir Tarea" onPress={handleCreateTaskForSelectedRoom} color={theme.primary} />
-          </View>
-        </View>
-      )}
-    </View>
-  );
+  return ( <View style={styles.listHeaderContainer}> <Text style={styles.sectionTitle}>Habitaciones del Grupo</Text> {!currentGroup && <Text style={styles.emptyText}>Por favor, selecciona un grupo.</Text>} {currentGroup && ( <> <View style={styles.inputRow}> <TextInput style={styles.input} placeholder="Nombre nueva habitación" placeholderTextColor={theme.placeholder} value={newRoomName} onChangeText={setNewRoomName} /> <Button title="Crear Habitación" onPress={handleCreateRoom} color={theme.primary} /> </View> <View style={styles.mapContainer} onLayout={handleMapLayout}> {rooms.map((room) => ( <DraggableRoomComponent key={room.id} room={room} initialPosition={room.position || { x: 0, y: 0 }} onSelectRoom={() => handleSelectRoomForEditing(room)} onDragEnd={handleRoomDragRelease} onUpdateRoomGestureProperties={onUpdateRoomGestureProperties} selected={selectedRoom?.id === room.id} isHighlighted={highlightedRoomIds.has(room.id)} styles={styles} /> ))} </View> </> )} {selectedRoom && ( <View style={styles.tasksSectionHeader}> <Text style={styles.sectionTitle}>Tareas para: {selectedRoom.name}</Text> <View style={styles.inputRow}> <TextInput style={styles.input} placeholder="Nueva tarea para esta habitación" placeholderTextColor={theme.placeholder} value={newTaskName} onChangeText={setNewTaskName} /> <Button title="Añadir Tarea" onPress={handleCreateTaskForSelectedRoom} color={theme.primary} /> </View> </View> )} </View> );
 }, (prevProps, nextProps) => {
-  return (
-    prevProps.currentGroup === nextProps.currentGroup &&
-    prevProps.rooms === nextProps.rooms &&
-    prevProps.newRoomName === nextProps.newRoomName &&
-    prevProps.selectedRoom === nextProps.selectedRoom &&
-    prevProps.newTaskName === nextProps.newTaskName &&
-    prevProps.mapContainerLayout === nextProps.mapContainerLayout &&
-    prevProps.handleCreateRoom === nextProps.handleCreateRoom &&
-    prevProps.handleSelectRoom === nextProps.handleSelectRoom &&
-    prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom &&
-    prevProps.handleMapLayout === nextProps.handleMapLayout &&
-    prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease &&
-    prevProps.styles === nextProps.styles &&
-    prevProps.theme === nextProps.theme
-  );
+    return ( prevProps.currentGroup === nextProps.currentGroup && prevProps.rooms === nextProps.rooms && prevProps.newRoomName === nextProps.newRoomName && prevProps.selectedRoom === nextProps.selectedRoom && prevProps.newTaskName === nextProps.newTaskName && prevProps.highlightedRoomIds === nextProps.highlightedRoomIds && prevProps.handleCreateRoom === nextProps.handleCreateRoom && prevProps.handleSelectRoomForEditing === nextProps.handleSelectRoomForEditing && prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom && prevProps.handleMapLayout === nextProps.handleMapLayout && prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease && prevProps.onUpdateRoomGestureProperties === nextProps.onUpdateRoomGestureProperties && prevProps.styles === nextProps.styles && prevProps.theme === nextProps.theme );
 });
 
+
+// --- TasksScreen ---
 export default function TasksScreen() {
   const { user } = useContext(UserContext);
   const {
-    currentGroup,
-    rooms,
-    createRoom,
-    updateRoomPosition,
-    tasks: allTasks,
-    createTask,
-    assignTaskToUser,
-    unassignTask,
-    deleteTask
+    currentGroup, rooms, createRoom, updateRoomPosition, updateRoomProperties, deleteRoom,
+    tasks: allTasks, createTask, assignTaskToUser, unassignTask, deleteTask: deleteTaskFromContext
   } = useContext(GroupContext);
-  const { theme } = useTheme();
+  const { theme } = useTheme(); // Ensure theme is available for highlight colors
 
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [newTaskName, setNewTaskName] = useState('');
+  const [highlightedRoomIds, setHighlightedRoomIds] = useState(new Set());
+  const snapHighlightTimers = useRef({}); // To manage highlight removal timeouts
 
   const styles = useMemo(() => getScreenStyles(theme), [theme]);
   const mapContainerLayout = useSharedValue({ width: 0, height: 0 });
 
-  const handleMapLayout = useCallback((event) => {
-    const { width, height } = event.nativeEvent.layout;
-    mapContainerLayout.value = { width, height };
-  }, [mapContainerLayout]);
+  useEffect(() => { if (selectedRoom) setNewTaskName(''); else setNewTaskName(''); }, [selectedRoom]);
+  useEffect(() => { return () => { Object.values(snapHighlightTimers.current).forEach(clearTimeout); }; }, []);
 
-  const handleCreateRoom = useCallback(async () => {
-    if (!newRoomName.trim()) {
-      Alert.alert('Error', 'El nombre de la habitación no puede estar vacío.');
-      return;
-    }
-    if (!currentGroup) {
-      Alert.alert('Error', 'Debes seleccionar un grupo para crear habitaciones.');
-      return;
-    }
-    try {
-      const containerWidth = mapContainerLayout.value.width || Dimensions.get('window').width * 0.8;
-      const containerHeight = mapContainerLayout.value.height || 250;
-      const roomWidth = 100;
-      const roomHeight = 60;
-      const maxPosX = Math.max(0, containerWidth - roomWidth);
-      const maxPosY = Math.max(0, containerHeight - roomHeight);
-      const initialX = Math.floor(Math.random() * maxPosX);
-      const initialY = Math.floor(Math.random() * maxPosY);
-      await createRoom(newRoomName, { x: initialX, y: initialY });
-      setNewRoomName('');
-    } catch (error) {
-      Alert.alert('Error al crear habitación', error.message);
-    }
-  }, [newRoomName, currentGroup, createRoom, mapContainerLayout]);
+  const handleMapLayout = useCallback((event) => { const { width, height } = event.nativeEvent.layout; mapContainerLayout.value = { width, height }; }, [mapContainerLayout]);
+  const handleCreateRoom = useCallback(async () => { /* ...no change */
+    if (!newRoomName.trim()) { Alert.alert('Error', 'Nombre hab. vacío'); return; } if (!currentGroup) { Alert.alert('Error', 'Selecciona grupo'); return; }
+    try { const cW = mapContainerLayout.value.width || Dimensions.get('window').width * 0.8; const cH = mapContainerLayout.value.height || 250; const iRW = 100; const iRH = 60; const mPX = Math.max(0, cW - iRW); const mPY = Math.max(0, cH - iRH); const iX = Math.floor(Math.random() * mPX); const iY = Math.floor(Math.random() * mPY); await createRoom(newRoomName, { x: iX, y: iY }); setNewRoomName(''); } catch (e) { Alert.alert('Error creando hab.', e.message); }
+  }, [newRoomName, currentGroup, createRoom, mapContainerLayout, setNewRoomName]);
+  
+  const handleRoomDragRelease = useCallback((draggedRoomId, releasePosition, gestureState) => {
+    const draggedRoomData = rooms.find(r => r.id === draggedRoomId);
+    if (!draggedRoomData) return;
 
-  const handleRoomDragRelease = useCallback((roomId, newPosition) => {
-    if (!currentGroup) return;
-    const containerWidth = mapContainerLayout.value.width || Infinity;
-    const containerHeight = mapContainerLayout.value.height || Infinity;
-    const roomWidth = 100;
-    const roomHeight = 60;
-    const constrainedX = Math.max(0, Math.min(newPosition.x, containerWidth - roomWidth));
-    const constrainedY = Math.max(0, Math.min(newPosition.y, containerHeight - roomHeight));
-    updateRoomPosition(roomId, { x: constrainedX, y: constrainedY })
-      .catch(err => Alert.alert("Error moviendo habitación", err.message));
-  }, [currentGroup, updateRoomPosition, mapContainerLayout]);
+    // Clear any existing highlight timer for the dragged room and its highlight state
+    if (snapHighlightTimers.current[draggedRoomId]) {
+      clearTimeout(snapHighlightTimers.current[draggedRoomId]);
+      delete snapHighlightTimers.current[draggedRoomId];
+    }
+    setHighlightedRoomIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(draggedRoomId)) {
+        newSet.delete(draggedRoomId);
+        return newSet;
+      }
+      return prev;
+    });
 
-  const handleSelectRoom = useCallback((room) => {
-    setSelectedRoom(room);
+    if (gestureState === 'start') {
+      // Potentially clear highlights of rooms that *were* targets of this room if desired.
+      // For now, just handling the dragged room is simpler.
+      return; 
+    }
+
+    if (gestureState === 'end') {
+      const dRoom = {
+        id: draggedRoomId,
+        x: releasePosition.x, y: releasePosition.y,
+        width: Number(draggedRoomData.width) || 100,
+        height: Number(draggedRoomData.height) || 60,
+      };
+
+      let snappedToTarget = null;
+
+      for (const otherRoom of rooms) {
+        if (otherRoom.id === draggedRoomId) continue;
+
+        const tRoom = {
+          id: otherRoom.id,
+          x: Number(otherRoom.position.x) || 0, y: Number(otherRoom.position.y) || 0,
+          width: Number(otherRoom.width) || 100, height: Number(otherRoom.height) || 60,
+        };
+
+        const dRoomCenterX = dRoom.x + dRoom.width / 2;
+        const dRoomCenterY = dRoom.y + dRoom.height / 2;
+
+        // Check if center of dragged room is within bounds of target room
+        if (dRoomCenterX >= tRoom.x && dRoomCenterX < tRoom.x + tRoom.width &&
+            dRoomCenterY >= tRoom.y && dRoomCenterY < tRoom.y + tRoom.height) {
+          
+          snappedToTarget = tRoom; // Store the target room
+
+          // Calculate potential snap positions to the edges of tRoom
+          const snapPositions = [
+            { x: tRoom.x - dRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 }, // Left of target
+            { x: tRoom.x + tRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 },// Right of target
+            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y - dRoom.height },  // Top of target
+            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y + tRoom.height },// Bottom of target
+          ];
+
+          let bestSnapPosition = null;
+          let minDistanceSqToOriginalRelease = Infinity;
+
+          snapPositions.forEach(sp => {
+            // Calculate distance from dRoom's original release point to this potential snap point
+            const distSq = (dRoom.x - sp.x) ** 2 + (dRoom.y - sp.y) ** 2;
+            if (distSq < minDistanceSqToOriginalRelease) {
+              minDistanceSqToOriginalRelease = distSq;
+              bestSnapPosition = { x: sp.x, y: sp.y };
+            }
+          });
+          
+          if (bestSnapPosition) {
+            const finalSnapX = Math.max(0, Math.min(bestSnapPosition.x, (mapContainerLayout.value.width || Infinity) - dRoom.width));
+            const finalSnapY = Math.max(0, Math.min(bestSnapPosition.y, (mapContainerLayout.value.height || Infinity) - dRoom.height));
+            
+            updateRoomPosition(draggedRoomId, { x: finalSnapX, y: finalSnapY });
+            
+            // Highlight both rooms
+            setHighlightedRoomIds(prev => new Set([...prev, draggedRoomId, tRoom.id]));
+
+            // Clear previous timers for these rooms
+            if (snapHighlightTimers.current[draggedRoomId]) clearTimeout(snapHighlightTimers.current[draggedRoomId]);
+            if (snapHighlightTimers.current[tRoom.id]) clearTimeout(snapHighlightTimers.current[tRoom.id]);
+            
+            const clearHighlightCallback = (id1, id2) => () => {
+              setHighlightedRoomIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(id1);
+                newSet.delete(id2);
+                return newSet;
+              });
+              delete snapHighlightTimers.current[id1];
+              delete snapHighlightTimers.current[id2];
+            };
+            
+            const timerCallback = clearHighlightCallback(draggedRoomId, tRoom.id);
+            snapHighlightTimers.current[draggedRoomId] = setTimeout(timerCallback, SNAP_DURATION_HIGHLIGHT_MS);
+            // Store timer under one key, perhaps draggedRoomId, if they share a highlight duration
+            // Or manage them separately if needed. For simplicity, let's assume they share a timeout event.
+            // snapHighlightTimers.current[tRoom.id] = snapHighlightTimers.current[draggedRoomId]; 
+            // No, this is wrong. They need separate timer IDs to clear, but can share the callback logic.
+            // The current approach is: each room gets its own timer to clear itself from the set.
+            // Let's refine this: one timer for the pair.
+            
+            // Revised timer logic: one timer for the pair.
+            const pairKey = [draggedRoomId, tRoom.id].sort().join('-'); // Consistent key for the pair
+            if (snapHighlightTimers.current[pairKey]) clearTimeout(snapHighlightTimers.current[pairKey]);
+            snapHighlightTimers.current[pairKey] = setTimeout(() => {
+                 setHighlightedRoomIds(prev => {
+                    const newSet = new Set(prev);
+                    newSet.delete(draggedRoomId);
+                    newSet.delete(tRoom.id);
+                    return newSet;
+                  });
+                  delete snapHighlightTimers.current[pairKey];
+            }, SNAP_DURATION_HIGHLIGHT_MS);
+
+            break; // Snapped, stop checking other rooms
+          }
+        }
+      }
+
+      if (!snappedToTarget) {
+        // No overlap snap, just move to constrained position based on release
+        const constrainedX = Math.max(0, Math.min(releasePosition.x, (mapContainerLayout.value.width || Infinity) - dRoom.width));
+        const constrainedY = Math.max(0, Math.min(releasePosition.y, (mapContainerLayout.value.height || Infinity) - dRoom.height));
+        updateRoomPosition(draggedRoomId, { x: constrainedX, y: constrainedY });
+        // Ensure its highlight is cleared if not snapped (it might have been a target previously)
+        // This logic is already handled at the beginning of the function.
+      }
+    }
+  }, [currentGroup, rooms, updateRoomPosition, mapContainerLayout.value.width, mapContainerLayout.value.height, theme.warning]); // Added theme.warning to deps if used in style calculation
+
+  const handleSelectRoomForEditing = useCallback((room) => { setSelectedRoom(prev => (prev?.id === room.id ? null : room)); }, [setSelectedRoom]);
+const handleCreateTaskForSelectedRoom = useCallback(async () => {
+  // Validación del nombre de la tarea
+  if (!newTaskName.trim()) {
+    Alert.alert('Error', 'Nombre tarea vacío.');
+    return;
+  }
+
+  // Validación de selección de habitación
+  if (!selectedRoom) {
+    Alert.alert('Error', 'Selecciona hab.');
+    return;
+  }
+
+  try {
+    // Crear la tarea y limpiar el campo
+    await createTask(newTaskName, selectedRoom.id);
     setNewTaskName('');
-  }, []);
+  } catch (e) {
+    Alert.alert('Error tarea', e.message);
+  }
+}, [newTaskName, selectedRoom, createTask, setNewTaskName]);
 
-  const handleCreateTaskForSelectedRoom = useCallback(async () => {
-    if (!newTaskName.trim()) {
-      Alert.alert('Error', 'El nombre de la tarea no puede estar vacío.');
-      return;
-    }
-    if (!selectedRoom) {
-      Alert.alert('Error', 'Debes seleccionar una habitación para crear la tarea.');
-      return;
-    }
-    try {
-      await createTask(newTaskName, selectedRoom.id);
-      setNewTaskName('');
-    } catch (error) {
-      Alert.alert('Error al crear tarea', error.message);
-    }
-  }, [newTaskName, selectedRoom, createTask]);
+const tasksForSelectedRoom = useMemo(() => {
+  return selectedRoom
+    ? allTasks.filter(task => task.roomId === selectedRoom.id)
+    : [];
+}, [selectedRoom, allTasks]);
 
-  const tasksForSelectedRoom = useMemo(() =>
-    selectedRoom
-      ? allTasks.filter(task => task.roomId === selectedRoom.id)
-      : [],
-    [selectedRoom, allTasks]
-  );
+  
+  const handleUpdateRoomGestureProperties = useCallback(async (roomId, newProps) => {
+    if (!roomId || !newProps) return;
+    
+    // Clear any highlight and its timer if properties are changed directly
+    const pairKeysToClear = Object.keys(snapHighlightTimers.current).filter(key => key.includes(roomId));
+    pairKeysToClear.forEach(key => {
+        clearTimeout(snapHighlightTimers.current[key]);
+        delete snapHighlightTimers.current[key];
+    });
 
-  return (
-    <FlatList
-      style={styles.container} // FlatList ocupa flex: 1
-      data={tasksForSelectedRoom}
-      keyExtractor={item => item.id}
-      ListHeaderComponent={useMemo(() => (
+    setHighlightedRoomIds(prev => {
+        const newSet = new Set(prev);
+        let changed = false;
+        if (newSet.has(roomId)) {
+            newSet.delete(roomId);
+            changed = true;
+        }
+        // Also remove any room it was paired with for highlighting
+        // This part needs careful consideration to avoid unintended side effects
+        // For now, just removing the directly manipulated room's highlight
+        return changed ? newSet : prev;
+    });
+
+    try { await updateRoomProperties(roomId, newProps); } catch (e) { Alert.alert("Error", `No se pudo actualizar: ${e.message}`); }
+  }, [updateRoomProperties]);
+
+  const handleDeleteSelectedRoom = useCallback(async () => { 
+    if (!selectedRoom) return;
+    Alert.alert( "Eliminar Habitación", `¿Estás seguro de que quieres eliminar "${selectedRoom.name}"?`, [ { text: "Cancelar", style: "cancel" }, { text: "Eliminar", style: "destructive", onPress: async () => { try { await deleteRoom(selectedRoom.id); setSelectedRoom(null); Alert.alert("Éxito", "Habitación eliminada."); } catch (error) { Alert.alert("Error", `No se pudo eliminar: ${error.message}`); } }, }, ] );
+  }, [selectedRoom, deleteRoom, setSelectedRoom]);
+
+  const renderListFooter = useCallback(() => { 
+    if (!selectedRoom) return null;
+    return ( <View style={styles.deleteRoomButtonContainer}><TouchableOpacity style={styles.deleteRoomButton} onPress={handleDeleteSelectedRoom}><Ionicons name="trash-outline" size={20} color={theme.textLight || '#fff'} /><Text style={styles.deleteRoomButtonText}>Eliminar Habitación</Text></TouchableOpacity></View> );
+  }, [selectedRoom, handleDeleteSelectedRoom, styles, theme]);
+
+return (
+  <FlatList
+    style={styles.container}
+    data={tasksForSelectedRoom}
+    keyExtractor={item => item.id}
+    ListHeaderComponent={useMemo(
+      () => (
         <ListHeaderComponent
           currentGroup={currentGroup}
           rooms={rooms}
@@ -385,66 +419,115 @@ export default function TasksScreen() {
           setNewRoomName={setNewRoomName}
           handleCreateRoom={handleCreateRoom}
           selectedRoom={selectedRoom}
-          handleSelectRoom={handleSelectRoom}
+          handleSelectRoomForEditing={handleSelectRoomForEditing}
           newTaskName={newTaskName}
           setNewTaskName={setNewTaskName}
           handleCreateTaskForSelectedRoom={handleCreateTaskForSelectedRoom}
           mapContainerLayout={mapContainerLayout}
           handleMapLayout={handleMapLayout}
           handleRoomDragRelease={handleRoomDragRelease}
+          onUpdateRoomGestureProperties={handleUpdateRoomGestureProperties}
+          highlightedRoomIds={highlightedRoomIds}
           styles={styles}
           theme={theme}
         />
-      ), [
-        currentGroup, rooms, newRoomName, /*setNewRoomName,*/ handleCreateRoom,
-        selectedRoom, handleSelectRoom, newTaskName, /*setNewTaskName,*/
-        handleCreateTaskForSelectedRoom, mapContainerLayout, handleMapLayout,
-        handleRoomDragRelease, styles, theme
-      ])}
-      renderItem={({ item }) => (
-        <View style={styles.taskItem}>
-          <Text style={styles.taskName}>{item.name}</Text>
-          <View style={styles.actionsContainer}>
-            {item.assignedTo ? (
-              <>
-                <Text style={styles.assignedToText}>Asignada a: {item.assignedToName}</Text>
-                {user && item.assignedTo === user.uid && (
-                  <TouchableOpacity onPress={() => unassignTask(item.id)} style={styles.actionIcon}>
-                    <Ionicons name="close-circle-outline" size={24} color={theme.error || 'red'} />
-                  </TouchableOpacity>
-                )}
-              </>
-            ) : (
-              user && (
-                <TouchableOpacity onPress={() => assignTaskToUser(item.id, user.uid, user.name || user.email)} style={styles.assignButton}>
-                  <Text style={styles.assignButtonText}>Asignarme</Text>
+      ),
+      [
+        currentGroup,
+        rooms,
+        newRoomName,
+        setNewRoomName,
+        handleCreateRoom,
+        selectedRoom,
+        handleSelectRoomForEditing,
+        newTaskName,
+        setNewTaskName,
+        handleCreateTaskForSelectedRoom,
+        mapContainerLayout,
+        handleMapLayout,
+        handleRoomDragRelease,
+        handleUpdateRoomGestureProperties,
+        highlightedRoomIds,
+        styles,
+        theme,
+      ]
+    )}
+    renderItem={({ item }) => (
+      <View style={styles.taskItem}>
+        <Text style={styles.taskName}>{item.name}</Text>
+        <View style={styles.actionsContainer}>
+          {item.assignedTo ? (
+            <>
+              <Text style={styles.assignedToText}>
+                Asignada a: {item.assignedToName}
+              </Text>
+              {user && item.assignedTo === user.uid && (
+                <TouchableOpacity
+                  onPress={() => unassignTask(item.id)}
+                  style={styles.actionIcon}
+                >
+                  <Ionicons
+                    name="close-circle-outline"
+                    size={24}
+                    color={theme.error || 'red'}
+                  />
                 </TouchableOpacity>
-              )
-            )}
-            {user && item.createdBy === user.uid && (
-              <TouchableOpacity onPress={() => deleteTask(item.id)} style={styles.actionIcon}>
-                <Ionicons name="trash-outline" size={24} color={theme.error || 'red'} />
+              )}
+            </>
+          ) : (
+            user && (
+              <TouchableOpacity
+                onPress={() =>
+                  assignTaskToUser(item.id, user.uid, user.name || user.email)
+                }
+                style={styles.assignButton}
+              >
+                <Text style={styles.assignButtonText}>Asignarme</Text>
               </TouchableOpacity>
-            )}
-          </View>
+            )
+          )}
+          {user && item.createdBy === user.uid && (
+            <TouchableOpacity
+              onPress={() => deleteTaskFromContext(item.id)}
+              style={styles.actionIcon}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={24}
+                color={theme.error || 'red'}
+              />
+            </TouchableOpacity>
+          )}
         </View>
-      )}
-      ListEmptyComponent={
-        currentGroup ? (
-          selectedRoom ? ( // Solo mostrar ListEmptyComponent si una habitación está seleccionada
-            tasksForSelectedRoom.length === 0 ? ( // Y si no hay tareas para esa habitación
-              <View style={styles.emptyTextContainer}> 
-                <Text style={styles.emptyText}>No hay tareas para esta habitación.</Text>
-              </View>
-            ) : null // Si hay tareas, no se renderiza este componente
-          ) : ( // Si no hay habitación seleccionada (pero sí un grupo)
-            <View style={styles.emptyTextContainer}> 
-              <Text style={styles.emptyText}>Selecciona una habitación para ver sus tareas.</Text>
+      </View>
+    )}
+    ListEmptyComponent={
+      currentGroup ? (
+        selectedRoom ? (
+          tasksForSelectedRoom.length === 0 ? (
+            <View style={styles.emptyTextContainer}>
+              <Text style={styles.emptyText}>
+                No hay tareas para {selectedRoom.name}.
+              </Text>
             </View>
-          )
-        ) : null 
-      }
-      contentContainerStyle={{ flexGrow: 1 }} 
-    />
-  );
+          ) : null
+        ) : (
+          <View style={styles.emptyTextContainer}>
+            <Text style={styles.emptyText}>
+              Selecciona una habitación para ver sus tareas.
+            </Text>
+          </View>
+        )
+      ) : null
+    }
+    ListFooterComponent={renderListFooter}
+    contentContainerStyle={{ flexGrow: 1 }}
+    extraData={{
+      selectedRoom,
+      highlightedRoomIdsLength: highlightedRoomIds.size,
+    }}
+  />
+);
+
 }
+
