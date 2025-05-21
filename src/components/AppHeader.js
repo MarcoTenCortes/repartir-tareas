@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 10,
     paddingVertical: 8,
-    marginTop: Platform.OS === 'android' ? 25 : 50,
+    marginTop: Platform.OS === 'android' ? 40 : 60,
     borderBottomWidth: 1,
     height: Platform.OS === 'android' ? 70 : 80,
     shadowColor: '#00000020',
