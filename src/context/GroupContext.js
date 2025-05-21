@@ -1,4 +1,4 @@
-// src/context/GroupContext.js
+// FILE: src/context/GroupContext.js
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { UserContext } from './UserContext';
 import { auth, db } from '../services/firebase';
@@ -8,8 +8,9 @@ import {
   onSnapshot,
   doc,
   updateDoc,
-  deleteDoc, // Asegúrate que deleteDoc está importado
+  deleteDoc,
   arrayUnion,
+  arrayRemove, // Asegúrate que arrayRemove esté importado
   Timestamp,
   serverTimestamp,
   query,
@@ -18,6 +19,7 @@ import {
   getDoc,
   getDocs,
   writeBatch,
+  runTransaction // Necesario para updateGroupName
 } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -35,7 +37,7 @@ export function GroupProvider({ children }) {
   const [payments, setPayments] = useState([]);
   const [rooms, setRooms] = useState([]);
 
-  // ... (resto del useEffect y otras funciones sin cambios relevantes para esta solicitud) ...
+  // ... (useEffect para seleccionar grupo y suscribirse a datos SIN CAMBIOS) ...
   // Efecto para seleccionar el primer grupo si no hay uno actual o el actual ya no existe
   useEffect(() => {
     if (userGroupsFromUserContext.length > 0) {
@@ -162,7 +164,119 @@ export function GroupProvider({ children }) {
     };
   }, [currentGroup, user]);
 
+  const getGroupMembersDetails = async (memberUIDs) => {
+    if (!memberUIDs || memberUIDs.length === 0) return [];
+    try {
+      const usersRef = collection(db, 'users');
+      // Firestore 'in' query supports up to 30 items in the array.
+      // If more members, chunk the requests. For simplicity, assuming less than 30.
+      const q = query(usersRef, where('uid', 'in', memberUIDs));
+      const querySnapshot = await getDocs(q);
+      const memberDetails = [];
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        memberDetails.push({
+          uid: data.uid,
+          name: data.displayName || 'Usuario sin nombre',
+          icon: data.selectedIcon || 'person-circle-outline',
+        });
+      });
+      return memberDetails;
+    } catch (error) {
+      console.error("Error fetching member details:", error);
+      return memberUIDs.map(uid => ({ uid, name: 'Error al cargar nombre', icon: 'alert-circle-outline' }));
+    }
+  };
 
+  const updateGroupName = async (groupId, newName) => {
+    if (!user) throw new Error("Usuario no autenticado.");
+    const groupDocRef = doc(db, 'groups', groupId);
+    const trimmedNewName = newName.trim();
+    if (!trimmedNewName) throw new Error("El nuevo nombre del grupo no puede estar vacío.");
+
+    try {
+      await runTransaction(db, async (transaction) => {
+        const groupSnap = await transaction.get(groupDocRef);
+        if (!groupSnap.exists()) throw new Error("El grupo no existe.");
+        const groupData = groupSnap.data();
+
+        if (groupData.owner !== user.uid) {
+          throw new Error("Solo el propietario puede cambiar el nombre del grupo.");
+        }
+
+        const oldNormalizedName = groupData.normalizedName;
+        const newNormalizedName = trimmedNewName.toLowerCase();
+
+        if (oldNormalizedName === newNormalizedName && groupData.name === trimmedNewName) {
+          // No changes needed if name and normalized name are the same.
+          return;
+        }
+        
+        // Check if new normalized name is already taken (by another group)
+        if (oldNormalizedName !== newNormalizedName) {
+            const newGroupNameRef = doc(db, 'groupNames', newNormalizedName);
+            const newGroupNameSnap = await transaction.get(newGroupNameRef);
+            if (newGroupNameSnap.exists()) {
+                throw new Error(`El nombre de grupo "${trimmedNewName}" ya está en uso por otro grupo.`);
+            }
+            // Delete old entry in groupNames
+            const oldGroupNameRef = doc(db, 'groupNames', oldNormalizedName);
+            transaction.delete(oldGroupNameRef);
+            // Create new entry in groupNames
+            transaction.set(newGroupNameRef, { groupId: groupId, originalName: trimmedNewName });
+        }
+
+        // Update group document
+        transaction.update(groupDocRef, {
+          name: trimmedNewName,
+          normalizedName: newNormalizedName
+        });
+      });
+      // Actualizar localmente si es el currentGroup
+      if (currentGroup && currentGroup.id === groupId) {
+        setCurrentGroup(prev => ({...prev, name: trimmedNewName, normalizedName: trimmedNewName.toLowerCase()}));
+      }
+    } catch (error) {
+      console.error("Error actualizando nombre del grupo:", error);
+      throw error;
+    }
+  };
+
+  const removeMemberFromGroup = async (groupId, memberIdToRemove) => {
+    if (!user) throw new Error("Usuario no autenticado.");
+    if (user.uid === memberIdToRemove) throw new Error("No puedes eliminarte a ti mismo del grupo.");
+
+    const groupDocRef = doc(db, 'groups', groupId);
+    try {
+      const groupSnap = await getDoc(groupDocRef);
+      if (!groupSnap.exists()) throw new Error("El grupo no existe.");
+      const groupData = groupSnap.data();
+
+      if (groupData.owner !== user.uid) {
+        throw new Error("Solo el propietario puede eliminar miembros.");
+      }
+      if (groupData.owner === memberIdToRemove) {
+        throw new Error("El propietario no puede ser eliminado. Transfiere la propiedad primero.");
+      }
+      if (!groupData.members.includes(memberIdToRemove)) {
+        throw new Error("El usuario no es miembro de este grupo.");
+      }
+
+      await updateDoc(groupDocRef, {
+        members: arrayRemove(memberIdToRemove)
+      });
+       // Actualizar localmente si es el currentGroup
+      if (currentGroup && currentGroup.id === groupId) {
+        setCurrentGroup(prev => ({...prev, members: prev.members.filter(uid => uid !== memberIdToRemove)}));
+      }
+    } catch (error) {
+      console.error("Error eliminando miembro del grupo:", error);
+      throw error;
+    }
+  };
+
+
+  // ... (resto de funciones: addReminder, deleteTask, etc. SIN CAMBIOS relevantes aquí)
   const addReminder = async (text, reminderDateInput) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!text || typeof text !== 'string' || text.trim() === '') {
@@ -188,8 +302,6 @@ export function GroupProvider({ children }) {
       throw error;
     }
   };
-
-  // --- FUNCIÓN NUEVA PARA BORRAR RECORDATORIOS ---
   const deleteReminder = async (reminderId) => {
     if (!currentGroup) {
       console.error("[GroupContext] Intento de eliminar recordatorio sin grupo seleccionado.");
@@ -203,16 +315,11 @@ export function GroupProvider({ children }) {
     try {
       const reminderDocRef = doc(db, 'groups', currentGroup.id, 'reminders', reminderId);
       await deleteDoc(reminderDocRef);
-      // La actualización de la lista de recordatorios se manejará automáticamente
-      // por el listener onSnapshot.
     } catch (error) {
       console.error(`[GroupContext] Error eliminando recordatorio ${reminderId} de Firestore: `, error);
-      throw error; // Relanzar para que la UI pueda manejarlo si es necesario
+      throw error; 
     }
   };
-  // --- FIN DE LA FUNCIÓN NUEVA ---
-
-  // ... (resto de las funciones como createTask, createRoom, addShoppingItem, etc.)
   const createTask = async (taskName, roomId) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!taskName.trim()) throw new Error("El nombre de la tarea no puede estar vacío.");
@@ -258,7 +365,6 @@ export function GroupProvider({ children }) {
     const taskDocRef = doc(db, 'groups', currentGroup.id, 'tasks', taskId);
     await deleteDoc(taskDocRef);
   };
-
   const createRoom = async (roomName, initialPosition = { x: 50, y: 50 }) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!roomName.trim()) throw new Error("El nombre de la habitación no puede estar vacío.");
@@ -306,7 +412,6 @@ export function GroupProvider({ children }) {
     if (properties.hasOwnProperty('shape')) {
       sanitizedProperties.shape = String(properties.shape) || 'rectangle';
     }
-
     const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
     await updateDoc(roomDocRef, sanitizedProperties);
   };
@@ -354,7 +459,6 @@ export function GroupProvider({ children }) {
         approvedBy: user.uid,
         approvedAt: Timestamp.now()
       });
-
       const paymentsQuery = query(collection(db, 'groups', groupId, 'payments'));
       const paymentsSnapshot = await getDocs(paymentsQuery);
       
@@ -481,7 +585,6 @@ export function GroupProvider({ children }) {
       throw error;
     }
   };
-  
   const addShoppingItem = async (itemText) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado para añadir a la compra.");
     if (!itemText.trim()) throw new Error("El texto del artículo no puede estar vacío.");
@@ -543,7 +646,6 @@ export function GroupProvider({ children }) {
     }
   };
 
-
   return (
     <GroupContext.Provider
       value={{
@@ -556,6 +658,11 @@ export function GroupProvider({ children }) {
         joinRequests,
         payments,
         rooms,
+        // Nuevas funciones
+        getGroupMembersDetails,
+        updateGroupName,
+        removeMemberFromGroup,
+        // Funciones existentes
         createTask,
         assignTaskToUser,
         unassignTask,
@@ -565,7 +672,7 @@ export function GroupProvider({ children }) {
         updateRoomProperties,
         deleteRoom,
         addReminder,
-        deleteReminder, // <<< EXPORTAR LA NUEVA FUNCIÓN
+        deleteReminder,
         addShoppingItem,
         toggleBought,
         deleteShoppingItem,

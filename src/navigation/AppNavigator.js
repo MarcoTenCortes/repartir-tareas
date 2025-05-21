@@ -1,4 +1,4 @@
-// src/navigation/AppNavigator.js
+// FILE: src/navigation/AppNavigator.js
 import React, { useContext } from 'react';
 import { View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -16,7 +16,8 @@ import GroupCreateScreen from '../screens/GroupCreateScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen'; 
-import UserProfileScreen from '../screens/UserProfileScreen'; // <<--- IMPORTAR NUEVA PANTALLA
+import UserProfileScreen from '../screens/UserProfileScreen';
+import GroupSettingsScreen from '../screens/GroupSettingsScreen'; // <<--- IMPORTAR NUEVA PANTALLA
 import { UserContext } from '../context/UserContext';
 
 
@@ -70,7 +71,8 @@ export default function AppNavigator() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="BuscarGrupo" component={GroupSearchScreen} />
             <Stack.Screen name="CrearGrupo" component={GroupCreateScreen} />
-            <Stack.Screen name="UserProfile" component={UserProfileScreen} /> 
+            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+            <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} />
           </>
         ) : (
           <>
