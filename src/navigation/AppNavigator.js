@@ -16,6 +16,7 @@ import GroupCreateScreen from '../screens/GroupCreateScreen';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import { UserContext } from '../context/UserContext';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen'; 
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -72,6 +73,7 @@ export default function AppNavigator() {
           <>
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
           </>
         )}
       </Stack.Navigator>
