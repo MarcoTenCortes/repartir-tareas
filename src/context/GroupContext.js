@@ -1,4 +1,4 @@
-// FILE: src/context/GroupContext.js
+// src/context/GroupContext.js
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { UserContext } from './UserContext';
 import { auth, db } from '../services/firebase';
@@ -10,11 +10,11 @@ import {
   updateDoc,
   deleteDoc,
   arrayUnion,
-  Timestamp,
-  serverTimestamp,
+  Timestamp, // Asegúrate que Timestamp está importado
+  serverTimestamp, // Importa serverTimestamp
   query,
   where,
-  orderBy, // Asegúrate que orderBy está importado
+  orderBy,
   getDoc,
   getDocs,
   writeBatch,
@@ -35,6 +35,7 @@ export function GroupProvider({ children }) {
   const [payments, setPayments] = useState([]);
   const [rooms, setRooms] = useState([]);
 
+  // Efecto para seleccionar el primer grupo si no hay uno actual o el actual ya no existe
   useEffect(() => {
     if (userGroupsFromUserContext.length > 0) {
       if (!currentGroup || !userGroupsFromUserContext.some(g => g.id === currentGroup.id)) {
@@ -45,115 +46,117 @@ export function GroupProvider({ children }) {
     }
   }, [userGroupsFromUserContext, currentGroup]);
 
+  // Efecto principal para suscribirse a los datos del grupo actual
   useEffect(() => {
-    if (!currentGroup) {
+    if (!currentGroup || !user) { // Asegurarse que hay usuario también para permisos
       setTasks([]);
       setShoppingList([]);
       setReminders([]);
       setJoinRequests([]);
       setPayments([]);
       setRooms([]);
-      return () => {};
+      return () => {}; // Retornar una función vacía para limpiar
     }
 
-    const tasksColRef = collection(db, 'groups', currentGroup.id, 'tasks');
+    const groupDocPath = `groups/${currentGroup.id}`;
+
+    // Tareas
+    const tasksColRef = collection(db, groupDocPath, 'tasks');
     const tasksQueryRef = query(tasksColRef, orderBy('createdAt', 'desc'));
     const unsubTasks = onSnapshot(tasksQueryRef, snap => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    }, err => console.error("[GroupContext] Error en snapshot de tareas:", err));
 
-    const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
+    // Habitaciones
+    const roomsColRef = collection(db, groupDocPath, 'rooms');
     const roomsQueryRef = query(roomsColRef, orderBy('createdAt', 'asc'));
     const unsubRooms = onSnapshot(roomsQueryRef, snap => {
       setRooms(snap.docs.map(d => {
         const data = d.data();
-        const position = data.position || {}; 
-
+        const position = data.position || {};
         return {
-          id: d.id,
-          ...data, 
-          name: data.name || "Habitación sin nombre", 
-          width: Number(data.width) || 100,          
-          height: Number(data.height) || 60,         
-          rotation: Number(data.rotation) || 0,      
-          shape: data.shape || 'rectangle',          
-          position: {
-            x: Number(position.x) || 0,              
-            y: Number(position.y) || 0,              
-          },
+          id: d.id, ...data, name: data.name || "Habitación sin nombre",
+          width: Number(data.width) || 100, height: Number(data.height) || 60,
+          rotation: Number(data.rotation) || 0, shape: data.shape || 'rectangle',
+          position: { x: Number(position.x) || 0, y: Number(position.y) || 0 },
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt : (data.createdAt ? Timestamp.fromDate(new Date(data.createdAt)) : serverTimestamp()),
         };
       }));
-    });
+    }, err => console.error("[GroupContext] Error en snapshot de habitaciones:", err));
     
-    const shopCol = collection(db, 'groups', currentGroup.id, 'shopping');
-    // MODIFICADO: Ordenar por el campo 'order' ascendentemente.
-    // Si 'order' no existe en documentos antiguos, podrían aparecer primero o último según Firestore.
-    // Se recomienda una migración de datos para añadir 'order' a items existentes si es necesario.
-    const shopQueryRef = query(shopCol, orderBy('order', 'asc'));
+    // Lista de la compra
+    const shopColRef = collection(db, groupDocPath, 'shopping');
+    const shopQueryRef = query(shopColRef, orderBy('order', 'asc'));
     const unsubShop = onSnapshot(shopQueryRef, snap => {
       setShoppingList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      // Ya no se necesita el sort manual aquí si Firestore ordena por 'order'
-    });
+    }, err => console.error("[GroupContext] Error en snapshot de lista de compra:", err));
     
-    const remCol = collection(db, 'groups', currentGroup.id, 'reminders');
-    const unsubRem = onSnapshot(remCol, snap => {
+    // Recordatorios
+    const remColRef = collection(db, groupDocPath, 'reminders');
+    const unsubRem = onSnapshot(remColRef, snap => {
       const items = snap.docs.map(d => {
         const data = d.data();
+        // Convertir Timestamp de Firestore a objeto Date de JS para el picker y la lógica de notificación
+        const jsDate = data.date && data.date.toDate ? data.date.toDate() : null;
         return {
           id: d.id,
           ...data,
-          date: data.date && data.date.toDate ? data.date.toDate() : null,
+          date: jsDate, // Usar el objeto Date de JS
           notified: data.notified !== undefined ? data.notified : false,
         };
       });
+      // Ordenar localmente por fecha (los nulos al final)
       setReminders(items.sort((a,b) => {
         if (a.date && b.date) return a.date.getTime() - b.date.getTime();
-        if (a.date && !b.date) return -1;
-        if (!a.date && b.date) return 1;
-        return 0;
+        if (a.date && !b.date) return -1; // 'a' con fecha va antes que 'b' sin fecha
+        if (!a.date && b.date) return 1;  // 'b' con fecha va antes que 'a' sin fecha
+        return 0; // Mismo estado de fecha (ambos con o ambos sin)
       }));
+
+      // Lógica de notificaciones (solo si no es web)
       if (Platform.OS !== 'web') {
         items.forEach(item => {
-          if (item.date && item.date instanceof Date && !item.notified) {
+          if (item.date && item.date instanceof Date && !item.notified) { // item.date ya es JS Date aquí
             const triggerDate = item.date;
-            if (triggerDate > new Date()) {
+            if (triggerDate > new Date()) { // Solo programar si la fecha es futura
               Notifications.scheduleNotificationAsync({
                 content: { title: 'Recordatorio', body: item.text },
                 trigger: triggerDate,
-              }).catch(e => console.error("Error scheduling notification:", e));
-              
-              updateDoc(
-                doc(db, 'groups', currentGroup.id, 'reminders', item.id),
-                { notified: true }
-              ).catch(error => console.error("Error updating reminder notification status:", error));
+              }).then(notificationId => {
+                // console.log(`[GroupContext] Notificación programada para recordatorio ${item.id}: ${notificationId}`);
+                // Actualizar 'notified' en Firestore
+                updateDoc(doc(db, groupDocPath, 'reminders', item.id), { notified: true })
+                  .catch(e => console.error("[GroupContext] Error actualizando 'notified' del recordatorio:", e));
+              }).catch(e => console.error("[GroupContext] Error programando notificación:", e));
             }
           }
         });
       }
-    });
+    }, err => console.error("[GroupContext] Error en snapshot de recordatorios:", err));
 
+    // Solicitudes de unión (solo para el propietario)
     let unsubJoinRequests = () => {};
-    if (currentGroup.members && user && currentGroup.members.includes(user.uid) && currentGroup.owner === user.uid) {
+    if (currentGroup.owner === user.uid) {
         const requestsQuery = query(
-            collection(db, 'groups', currentGroup.id, 'joinRequests'),
+            collection(db, groupDocPath, 'joinRequests'),
             where('status', '==', 'pending')
         );
         unsubJoinRequests = onSnapshot(requestsQuery, snap => {
             setJoinRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-        });
+        }, err => console.error("[GroupContext] Error en snapshot de solicitudes de unión:", err));
     } else {
-        setJoinRequests([]);
+        setJoinRequests([]); // Limpiar si no es propietario
     }
 
-    const paymentsCol = collection(db, 'groups', currentGroup.id, 'payments');
-    const paymentsQueryRef = query(paymentsCol, orderBy('createdAt', 'desc')); 
+    // Pagos
+    const paymentsColRef = collection(db, groupDocPath, 'payments');
+    const paymentsQueryRef = query(paymentsColRef, orderBy('createdAt', 'desc')); 
     const unsubPayments = onSnapshot(paymentsQueryRef, snap => {
       setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
+    }, err => console.error("[GroupContext] Error en snapshot de pagos:", err));
 
 
-    return () => {
+    return () => { // Función de limpieza
       unsubTasks();
       unsubRooms();
       unsubShop();
@@ -161,8 +164,54 @@ export function GroupProvider({ children }) {
       unsubJoinRequests();
       unsubPayments();
     };
-  }, [currentGroup, user]);
+  }, [currentGroup, user]); // Dependencias del efecto principal
 
+
+  const addReminder = async (text, reminderDateInput) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!text || typeof text !== 'string' || text.trim() === '') {
+        throw new Error("El texto del recordatorio no puede estar vacío.");
+    }
+
+    // --- DEBUG LOG (Inicio) ---
+    console.log('[GroupContext] addReminder:');
+    console.log('  Texto recibido:', text);
+    console.log('  Fecha de recordatorio (input):', reminderDateInput);
+    if (reminderDateInput) {
+      console.log('  reminderDateInput es instancia de Date?:', reminderDateInput instanceof Date);
+      if (reminderDateInput instanceof Date) {
+        console.log('  reminderDateInput.getTime() es NaN?:', isNaN(reminderDateInput.getTime()));
+      }
+    }
+    // --- DEBUG LOG (Fin) ---
+
+    const reminderDataObject = {
+      text: text.trim(),
+      createdAt: serverTimestamp(), // Usar serverTimestamp para la fecha de creación
+      notified: false,
+      date: null // Inicializar date como null
+    };
+
+    // Asignar la fecha solo si es una instancia válida de Date
+    if (reminderDateInput && reminderDateInput instanceof Date && !isNaN(reminderDateInput.getTime())) {
+      reminderDataObject.date = Timestamp.fromDate(reminderDateInput); // Convertir JS Date a Firestore Timestamp
+    }
+    
+    // --- DEBUG LOG (Antes de guardar) ---
+    console.log('[GroupContext] Datos del recordatorio a guardar en Firestore:', reminderDataObject);
+    // --- DEBUG LOG (Fin) ---
+
+    try {
+      const remindersColRef = collection(db, 'groups', currentGroup.id, 'reminders');
+      await addDoc(remindersColRef, reminderDataObject);
+      console.log('[GroupContext] Recordatorio añadido a Firestore con éxito.');
+    } catch (error) {
+      console.error("[GroupContext] Error añadiendo recordatorio a Firestore: ", error);
+      throw error; // Relanzar el error para que la UI pueda manejarlo si es necesario
+    }
+  };
+
+  // ... (resto de las funciones como createTask, createRoom, addShoppingItem, etc., sin cambios)
   const createTask = async (taskName, roomId) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!taskName.trim()) throw new Error("El nombre de la tarea no puede estar vacío.");
@@ -192,7 +241,6 @@ export function GroupProvider({ children }) {
       assignedAt: serverTimestamp(),
     });
   };
-
   const unassignTask = async (taskId) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!taskId) throw new Error("ID de tarea no proporcionado.");
@@ -214,7 +262,6 @@ export function GroupProvider({ children }) {
   const createRoom = async (roomName, initialPosition = { x: 50, y: 50 }) => {
     if (!currentGroup || !user) throw new Error("Grupo o usuario no disponibles.");
     if (!roomName.trim()) throw new Error("El nombre de la habitación no puede estar vacío.");
-
     const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
     await addDoc(roomsColRef, {
       name: roomName.trim(),
@@ -279,7 +326,7 @@ export function GroupProvider({ children }) {
     );
     const tasksSnapshot = await getDocs(tasksQuery);
     tasksSnapshot.forEach(taskDoc => {
-      batch.update(taskDoc.ref, { roomId: null });
+      batch.update(taskDoc.ref, { roomId: null }); // O eliminar las tareas asociadas
     });
     await batch.commit();
   };
@@ -307,9 +354,10 @@ export function GroupProvider({ children }) {
       await updateDoc(requestDocRef, {
         status: 'approved',
         approvedBy: user.uid,
-        approvedAt: Timestamp.now()
+        approvedAt: Timestamp.now() // serverTimestamp() puede ser mejor aquí también
       });
 
+      // Actualizar pagos existentes para incluir al nuevo miembro
       const paymentsQuery = query(collection(db, 'groups', groupId, 'payments'));
       const paymentsSnapshot = await getDocs(paymentsQuery);
       
@@ -319,13 +367,13 @@ export function GroupProvider({ children }) {
           const paymentData = paymentDoc.data();
           const currentPayers = paymentData.payers && typeof paymentData.payers === 'object' ? paymentData.payers : {};
           
-          if (!currentPayers[requestingUserId]) {
+          if (!currentPayers[requestingUserId]) { // Solo añadir si no existe
             const updatedPayers = {
               ...currentPayers,
               [requestingUserId]: {
                 paid: false,
                 paidAt: null,
-                userName: newMemberName
+                userName: newMemberName // Usar el nombre obtenido
               }
             };
             paymentBatch.update(paymentDoc.ref, { payers: updatedPayers });
@@ -335,7 +383,7 @@ export function GroupProvider({ children }) {
       }
 
     } catch (error) {
-      console.error("Error aprobando solicitud y actualizando pagos:", error);
+      console.error("[GroupContext] Error aprobando solicitud y actualizando pagos:", error);
       throw error;
     }
   };
@@ -345,26 +393,20 @@ export function GroupProvider({ children }) {
     if (!description.trim()) throw new Error("La descripción del pago no puede estar vacía.");
 
     const initialPayers = {};
+    // Obtener los miembros actuales directamente del documento del grupo para la lista más actualizada
     const groupDocSnap = await getDoc(doc(db, 'groups', currentGroup.id));
-    const membersForPayment = groupDocSnap.exists() ? groupDocSnap.data().members : currentGroup.members;
+    const membersForPayment = groupDocSnap.exists() ? groupDocSnap.data().members : (currentGroup.members || []);
+
 
     if (membersForPayment && membersForPayment.length > 0) {
       for (const memberUid of membersForPayment) {
-        let memberName;
-        if (memberUid === user.uid) {
-            if (user.name && user.name.trim() !== "") memberName = user.name;
-            else if (auth.currentUser && auth.currentUser.displayName && auth.currentUser.displayName.trim() !== "") memberName = auth.currentUser.displayName;
-            else {
-                try {
-                    const userDocSnap = await getDoc(doc(db, 'users', user.uid));
-                    memberName = (userDocSnap.exists() && userDocSnap.data().displayName && userDocSnap.data().displayName.trim() !== "") ? userDocSnap.data().displayName : (user.email || "Tú (Nombre no disponible)");
-                } catch (dbError) { memberName = user.email || "Tú (Error DB)"; }
-            }
-        } else {
-            try {
-                const userDocSnap = await getDoc(doc(db, 'users', memberUid));
-                memberName = (userDocSnap.exists() && userDocSnap.data().displayName && userDocSnap.data().displayName.trim() !== "") ? userDocSnap.data().displayName : "Otro Miembro (Nombre no disponible)";
-            } catch (e) { memberName = "Error al cargar nombre"; }
+        let memberName = "Miembro"; // Nombre por defecto
+        // Intenta obtener el nombre del documento del usuario
+        const userDocSnap = await getDoc(doc(db, 'users', memberUid));
+        if (userDocSnap.exists() && userDocSnap.data().displayName) {
+          memberName = userDocSnap.data().displayName;
+        } else if (memberUid === user.uid && user.name) { // Para el usuario actual, usar el del contexto si está disponible
+           memberName = user.name;
         }
         initialPayers[memberUid] = { paid: false, paidAt: null, userName: memberName };
       }
@@ -380,7 +422,7 @@ export function GroupProvider({ children }) {
         payers: initialPayers,
       });
     } catch (error) {
-      console.error("Error añadiendo pago:", error);
+      console.error("[GroupContext] Error añadiendo pago:", error);
       throw error;
     }
   };
@@ -393,7 +435,7 @@ export function GroupProvider({ children }) {
       const paymentDocRef = doc(db, 'groups', currentGroup.id, 'payments', paymentId);
       await deleteDoc(paymentDocRef);
     } catch (error) {
-      console.error("Error eliminando pago:", error);
+      console.error("[GroupContext] Error eliminando pago:", error);
       throw error;
     }
   };
@@ -407,20 +449,24 @@ export function GroupProvider({ children }) {
       const paymentData = paymentSnap.data();
       const currentPayerData = paymentData.payers[memberUidToToggle];
       
-      if (user.uid !== memberUidToToggle) {
+      if (user.uid !== memberUidToToggle) { // Restricción: solo el propio usuario puede marcar su pago
           throw new Error("Solo puedes marcar/desmarcar tu propio estado de pago.");
       }
       if (!currentPayerData) throw new Error("No estás en la lista de pagadores de este pago.");
+      
       const newPaidStatus = !currentPayerData.paid;
-      const newPaidAt = newPaidStatus ? serverTimestamp() : null;
-      const updatePath = `payers.${memberUidToToggle}.paid`;
+      const newPaidAt = newPaidStatus ? serverTimestamp() : null; // Usar serverTimestamp() para la fecha de pago
+      
+      // Actualizar campos específicos usando notación de punto
+      const updatePathStatus = `payers.${memberUidToToggle}.paid`;
       const updatePathTimestamp = `payers.${memberUidToToggle}.paidAt`;
+      
       await updateDoc(paymentDocRef, {
-        [updatePath]: newPaidStatus,
+        [updatePathStatus]: newPaidStatus,
         [updatePathTimestamp]: newPaidAt
       });
     } catch (error) {
-      console.error("Error actualizando estado de pago:", error);
+      console.error("[GroupContext] Error actualizando estado de pago:", error);
       throw error;
     }
   };
@@ -434,32 +480,10 @@ export function GroupProvider({ children }) {
       await updateDoc(requestDocRef, {
         status: 'rejected',
         rejectedBy: user.uid,
-        rejectedAt: Timestamp.now()
+        rejectedAt: Timestamp.now() // o serverTimestamp()
       });
     } catch (error) {
-      console.error("Error rechazando solicitud:", error);
-      throw error;
-    }
-  };
-
-  const addReminder = async (text, reminderDate) => {
-    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
-    if (!text || typeof text !== 'string' || text.trim() === '') {
-        throw new Error("El texto del recordatorio no puede estar vacío.");
-    }
-    const reminderData = {
-      text: text.trim(),
-      createdAt: Timestamp.now(),
-      notified: false,
-      ...(reminderDate && reminderDate instanceof Date && !isNaN(reminderDate.getTime()) 
-          ? { date: Timestamp.fromDate(reminderDate) } 
-          : { date: null })
-    };
-    try {
-      const remindersColRef = collection(db, 'groups', currentGroup.id, 'reminders');
-      await addDoc(remindersColRef, reminderData);
-    } catch (error) {
-      console.error("Error adding reminder to Firestore: ", error);
+      console.error("[GroupContext] Error rechazando solicitud:", error);
       throw error;
     }
   };
@@ -472,13 +496,13 @@ export function GroupProvider({ children }) {
       await addDoc(shopColRef, {
         text: itemText.trim(),
         bought: false,
-        createdAt: Timestamp.now(), // Mantenido para auditoría si se desea
-        order: Date.now(), // NUEVO: Usar timestamp actual para el orden inicial
+        createdAt: serverTimestamp(), // Usar serverTimestamp
+        order: Date.now(), // Para el orden inicial, se puede usar Date.now() o serverTimestamp()
         addedBy: user?.uid || 'unknown',
-        addedByName: user?.name || user?.email || 'Unknown User'
+        addedByName: user?.name || user?.email || 'Unknown User' // Nombre del usuario que añade
       });
     } catch (error) {
-      console.error("Error adding shopping item to Firestore: ", error);
+      console.error("[GroupContext] Error adding shopping item to Firestore: ", error);
       throw error;
     }
   };
@@ -489,7 +513,7 @@ export function GroupProvider({ children }) {
       const itemDocRef = doc(db, 'groups', currentGroup.id, 'shopping', itemId);
       await updateDoc(itemDocRef, { bought });
     } catch (error) {
-      console.error("Error updating bought status: ", error);
+      console.error("[GroupContext] Error updating bought status: ", error);
       throw error;
     }
   };
@@ -500,34 +524,30 @@ export function GroupProvider({ children }) {
       const itemDocRef = doc(db, 'groups', currentGroup.id, 'shopping', itemId);
       await deleteDoc(itemDocRef);
     } catch (error) {
-      console.error("Error deleting shopping item: ", error);
+      console.error("[GroupContext] Error deleting shopping item: ", error);
       throw error;
     }
   };
 
-  // NUEVA FUNCIÓN: Para actualizar el orden de los artículos de la compra
   const updateShoppingListOrder = async (reorderedItems) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
-    if (!reorderedItems || reorderedItems.length === 0) return; // No hay nada que actualizar
+    if (!reorderedItems || reorderedItems.length === 0) return;
 
     const batch = writeBatch(db);
     reorderedItems.forEach((item, index) => {
-      // Asegurarse de que el item tiene un ID; podría no tenerlo si es un item nuevo aún no en Firestore
-      // DraggableFlatList devuelve los items con sus IDs si vienen de la data original.
       if (item.id) { 
         const itemDocRef = doc(db, 'groups', currentGroup.id, 'shopping', item.id);
-        batch.update(itemDocRef, { order: index }); // Usar el índice del array como el nuevo valor de 'order'
+        batch.update(itemDocRef, { order: index });
       }
     });
     
     try {
       await batch.commit();
     } catch (error) {
-      console.error("Error actualizando el orden de la lista de la compra:", error);
-      throw error; // Propagar el error para que la UI pueda manejarlo
+      console.error("[GroupContext] Error actualizando el orden de la lista de la compra:", error);
+      throw error;
     }
   };
-
 
   return (
     <GroupContext.Provider
@@ -549,11 +569,11 @@ export function GroupProvider({ children }) {
         updateRoomPosition,
         updateRoomProperties,
         deleteRoom,
-        addReminder,
+        addReminder, // Asegúrate que está exportada
         addShoppingItem,
         toggleBought,
         deleteShoppingItem,
-        updateShoppingListOrder, // Exportar la nueva función
+        updateShoppingListOrder,
         approveJoinRequest,
         rejectJoinRequest,
         addPayment,
