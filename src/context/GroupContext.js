@@ -17,7 +17,7 @@ import {
   orderBy,
   getDoc,
   getDocs,
-  writeBatch, // Para operaciones por lotes
+  writeBatch,
 } from 'firebase/firestore';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
@@ -65,10 +65,30 @@ export function GroupProvider({ children }) {
     const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
     const roomsQueryRef = query(roomsColRef, orderBy('createdAt', 'asc'));
     const unsubRooms = onSnapshot(roomsQueryRef, snap => {
-      setRooms(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setRooms(snap.docs.map(d => {
+        const data = d.data();
+        const position = data.position || {}; // Ensure position object exists
+
+        // Sanitize room properties to prevent "undefined" strings or wrong types
+        return {
+          id: d.id,
+          ...data, // Spread existing data first
+          name: data.name || "Habitación sin nombre", // Default name if missing
+          width: Number(data.width) || 100,          // Ensure width is a number, default to 100
+          height: Number(data.height) || 60,         // Ensure height is a number, default to 60
+          rotation: Number(data.rotation) || 0,      // Ensure rotation is a number, default to 0
+          shape: data.shape || 'rectangle',          // Ensure shape is a string, default to 'rectangle'
+          position: {
+            x: Number(position.x) || 0,              // Ensure x is a number, default to 0
+            y: Number(position.y) || 0,              // Ensure y is a number, default to 0
+          },
+          // Ensure createdAt is a Timestamp or null, handle potential string dates if necessary
+          createdAt: data.createdAt instanceof Timestamp ? data.createdAt : (data.createdAt ? Timestamp.fromDate(new Date(data.createdAt)) : serverTimestamp()),
+          // createdBy should ideally always be present
+        };
+      }));
     });
     
-    // ... (otros listeners existentes sin cambios)
     const shopCol = collection(db, 'groups', currentGroup.id, 'shopping');
     const unsubShop = onSnapshot(shopCol, snap =>
       setShoppingList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
@@ -96,7 +116,6 @@ export function GroupProvider({ children }) {
         if (!a.date && b.date) return 1;
         return 0;
       }));
-
       if (Platform.OS !== 'web') {
         items.forEach(item => {
           if (item.date && item.date instanceof Date && !item.notified) {
@@ -202,11 +221,14 @@ export function GroupProvider({ children }) {
     const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
     await addDoc(roomsColRef, {
       name: roomName.trim(),
-      position: initialPosition,
+      position: { // Ensure position values are numbers
+        x: Number(initialPosition.x) || 0,
+        y: Number(initialPosition.y) || 0,
+      },
       shape: 'rectangle', 
-      width: 100, // Default width
-      height: 60,  // Default height
-      rotation: 0, // Default rotation
+      width: 100,
+      height: 60,
+      rotation: 0,
       createdAt: serverTimestamp(),
       createdBy: user.uid,
     });
@@ -217,16 +239,34 @@ export function GroupProvider({ children }) {
     if (!roomId || !newPosition) throw new Error("Información incompleta para actualizar la posición.");
     const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
     await updateDoc(roomDocRef, {
-      position: newPosition,
+      position: { // Ensure position values are numbers
+        x: Number(newPosition.x) || 0,
+        y: Number(newPosition.y) || 0,
+      }
     });
   };
 
-  // Genérica para forma, tamaño, rotación
   const updateRoomProperties = async (roomId, properties) => {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!roomId || !properties) throw new Error("Información incompleta para actualizar propiedades.");
+    
+    // Sanitize properties before updating
+    const sanitizedProperties = { ...properties };
+    if (properties.hasOwnProperty('width')) {
+      sanitizedProperties.width = Number(properties.width) || 100;
+    }
+    if (properties.hasOwnProperty('height')) {
+      sanitizedProperties.height = Number(properties.height) || 60;
+    }
+    if (properties.hasOwnProperty('rotation')) {
+      sanitizedProperties.rotation = Number(properties.rotation) || 0;
+    }
+    if (properties.hasOwnProperty('shape')) {
+      sanitizedProperties.shape = String(properties.shape) || 'rectangle';
+    }
+
     const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
-    await updateDoc(roomDocRef, properties); // properties es un objeto { shape: 'newShape', width: newW, ... }
+    await updateDoc(roomDocRef, sanitizedProperties);
   };
   
   const deleteRoom = async (roomId) => {
@@ -234,12 +274,9 @@ export function GroupProvider({ children }) {
     if (!roomId) throw new Error("ID de habitación no proporcionado.");
   
     const batch = writeBatch(db);
-  
-    // 1. Referencia al documento de la habitación a eliminar
     const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
     batch.delete(roomDocRef);
   
-    // 2. Buscar tareas asociadas y actualizar su roomId a null
     const tasksQuery = query(
       collection(db, 'groups', currentGroup.id, 'tasks'),
       where('roomId', '==', roomId)
@@ -248,12 +285,10 @@ export function GroupProvider({ children }) {
     tasksSnapshot.forEach(taskDoc => {
       batch.update(taskDoc.ref, { roomId: null });
     });
-  
-    // Ejecutar todas las operaciones en lote
     await batch.commit();
   };
 
-  // ... (resto de funciones como approveJoinRequest, addPayment, etc. sin cambios)
+  // ... (resto de funciones: approveJoinRequest, addPayment, etc. sin cambios, pero asegúrate de que también manejan los datos correctamente)
   const approveJoinRequest = async (groupId, requestingUserId) => {
     if (!user || !currentGroup || currentGroup.id !== groupId || currentGroup.owner !== user.uid) {
         throw new Error("Operación no permitida o grupo incorrecto.");
@@ -284,7 +319,7 @@ export function GroupProvider({ children }) {
       const paymentsSnapshot = await getDocs(paymentsQuery);
       
       if (!paymentsSnapshot.empty) {
-        const paymentBatch = writeBatch(db); // Renombrar para evitar confusión con el batch de deleteRoom si estuviera en el mismo scope
+        const paymentBatch = writeBatch(db); 
         paymentsSnapshot.forEach(paymentDoc => {
           const paymentData = paymentDoc.data();
           const currentPayers = paymentData.payers && typeof paymentData.payers === 'object' ? paymentData.payers : {};
@@ -302,7 +337,6 @@ export function GroupProvider({ children }) {
           }
         });
         await paymentBatch.commit();
-        console.log("Pagos existentes actualizados con el nuevo miembro.");
       }
 
     } catch (error) {
@@ -345,7 +379,7 @@ export function GroupProvider({ children }) {
       const paymentsColRef = collection(db, 'groups', currentGroup.id, 'payments');
       await addDoc(paymentsColRef, {
         description: description.trim(),
-        amount: amount ? parseFloat(amount) : null,
+        amount: amount ? parseFloat(amount) : null, // Ensure amount is a number or null
         createdAt: serverTimestamp(),
         createdByUid: user.uid,
         payers: initialPayers,
@@ -377,11 +411,8 @@ export function GroupProvider({ children }) {
       if (!paymentSnap.exists()) throw new Error("El pago no existe.");
       const paymentData = paymentSnap.data();
       const currentPayerData = paymentData.payers[memberUidToToggle];
-      // Modificado: Permitir que el creador del pago o el admin del grupo puedan marcar/desmarcar pagos de otros.
-      // Necesitaríamos la info del owner del grupo aquí, o una lógica de roles más compleja.
-      // Por simplicidad, mantenemos que solo el propio usuario puede cambiar su estado.
+      
       if (user.uid !== memberUidToToggle) {
-          // Esta lógica puede cambiar si el admin/creador del pago debe poder modificar.
           throw new Error("Solo puedes marcar/desmarcar tu propio estado de pago.");
       }
       if (!currentPayerData) throw new Error("No estás en la lista de pagadores de este pago.");
@@ -490,15 +521,15 @@ export function GroupProvider({ children }) {
         reminders,
         joinRequests,
         payments,
-        rooms,
+        rooms, // This will now provide sanitized room data
         createTask,
         assignTaskToUser,
         unassignTask,
         deleteTask,
         createRoom,
         updateRoomPosition,
-        updateRoomProperties, // Para shape, size, rotation
-        deleteRoom,           // Para eliminar habitación
+        updateRoomProperties,
+        deleteRoom,
         addReminder,
         addShoppingItem,
         toggleBought,
@@ -514,3 +545,4 @@ export function GroupProvider({ children }) {
     </GroupContext.Provider>
   );
 }
+
