@@ -7,9 +7,9 @@ import {
   onAuthStateChanged,
   updateProfile,
   signOut,
-  EmailAuthProvider, // Necesario para reautenticar
-  reauthenticateWithCredential, // Necesario para reautenticar
-  updatePassword // Necesario para cambiar contraseña
+  EmailAuthProvider, 
+  reauthenticateWithCredential, 
+  updatePassword 
 } from 'firebase/auth';
 import {
   collection,
@@ -19,12 +19,13 @@ import {
   onSnapshot,
   query,
   where,
-  updateDoc, // Asegúrate de que updateDoc está importado
+  updateDoc, 
   arrayUnion,
   arrayRemove,
   getDocs,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
+  writeBatch // Added for deleteGroup
 } from 'firebase/firestore';
 
 export const UserContext = createContext();
@@ -147,13 +148,11 @@ export function UserProvider({ children }) {
       firestoreUpdates.selectedIcon = profileData.iconName;
       updates.icon = profileData.iconName;
     }
-
     if (Object.keys(firestoreUpdates).length > 0) {
       const userDocRef = doc(db, 'users', auth.currentUser.uid);
       await updateDoc(userDocRef, firestoreUpdates);
     }
     
-    // Actualizar el estado local del usuario
     setUser(prevUser => ({ ...prevUser, ...updates }));
   };
 
@@ -165,9 +164,7 @@ export function UserProvider({ children }) {
     const credential = EmailAuthProvider.credential(userAuth.email, currentPassword);
 
     try {
-      // Reautenticar al usuario
       await reauthenticateWithCredential(userAuth, credential);
-      // Si la reautenticación es exitosa, cambiar la contraseña
       await updatePassword(userAuth, newPassword);
     } catch (error) {
       console.error("Error changing password:", error);
@@ -181,7 +178,6 @@ export function UserProvider({ children }) {
   };
   
   const createGroup = async (groupName) => {
-    // ... (sin cambios)
     if (!user) throw new Error('Usuario no autenticado. No se puede crear el grupo.');
     if (!groupName || groupName.trim() === '') throw new Error('El nombre del grupo no puede estar vacío.');
 
@@ -225,7 +221,6 @@ export function UserProvider({ children }) {
   };
 
   const joinGroup = async (groupIdToJoin, groupNameToJoin) => {
-    // ... (sin cambios)
     if (!user) throw new Error('Usuario no autenticado');
     if (!groupIdToJoin) throw new Error('ID de grupo no proporcionado.');
 
@@ -259,25 +254,81 @@ export function UserProvider({ children }) {
         throw error;
     }
   };
-
+  
   const leaveGroup = async (groupId) => {
-    // ... (sin cambios)
     if (!user) throw new Error("Usuario no autenticado.");
     if (!groupId) throw new Error("ID de grupo no proporcionado.");
 
     const groupDocRef = doc(db, 'groups', groupId);
     try {
+      // Additional check: owner cannot leave if there are other members.
+      // They must delete the group or transfer ownership (not implemented).
+      const groupSnap = await getDoc(groupDocRef);
+      if (groupSnap.exists()) {
+          const groupData = groupSnap.data();
+          if (groupData.owner === user.uid && groupData.members.length > 1) {
+              throw new Error("Como propietario, no puedes abandonar el grupo si hay otros miembros. Considera eliminar el grupo o transferir la propiedad.");
+          }
+          // If owner is the last member, they should use deleteGroup.
+          if (groupData.owner === user.uid && groupData.members.length === 1) {
+              throw new Error("Eres el único miembro y propietario. Utiliza la opción 'Eliminar Grupo'.");
+          }
+      } else {
+          throw new Error("El grupo no existe.");
+      }
+
       await updateDoc(groupDocRef, {
         members: arrayRemove(user.uid)
       });
+      // If the user was the owner and the last member, the group still exists but is empty.
+      // This scenario is less common if deleteGroup is used by the owner.
     } catch (error) {
       console.error("Error al abandonar el grupo:", error);
       throw error;
     }
   };
 
+  const deleteGroup = async (groupId) => {
+    if (!user) throw new Error("Usuario no autenticado.");
+    if (!groupId) throw new Error("ID de grupo no proporcionado.");
+
+    const groupDocRef = doc(db, 'groups', groupId);
+    try {
+        const groupSnap = await getDoc(groupDocRef);
+        if (!groupSnap.exists()) throw new Error("El grupo no existe.");
+
+        const groupData = groupSnap.data();
+        if (groupData.owner !== user.uid) {
+            throw new Error("Solo el propietario puede eliminar el grupo.");
+        }
+
+        const batch = writeBatch(db);
+        
+        // 1. Delete the group document itself
+        batch.delete(groupDocRef);
+
+        // 2. Delete the entry in groupNames collection
+        if (groupData.normalizedName) {
+            const groupNameDocRef = doc(db, 'groupNames', groupData.normalizedName);
+            batch.delete(groupNameDocRef);
+        }
+        
+        // Note: Deleting subcollections (tasks, shopping, reminders, etc.)
+        // client-side is complex and error-prone for large amounts of data.
+        // This is typically best handled by a Cloud Function triggered on group deletion.
+        // For this scope, we are only deleting the main group doc and its name entry.
+        // Consider your data retention and cleanup strategy.
+
+        await batch.commit();
+        // Local state updates (groups, currentGroup) will be handled by onSnapshot listeners.
+    } catch (error) {
+        console.error("Error al eliminar el grupo:", error);
+        throw error;
+    }
+  };
+
+
   const getGroupByName = async (name) => {
-    // ... (sin cambios)
     if (!name || name.trim() === '') return [];
     const normalizedQueryName = name.trim().toLowerCase();
     const q = query(
@@ -295,11 +346,12 @@ export function UserProvider({ children }) {
       register,
       login,
       logout,
-      updateUserProfile, // << AÑADIR
-      changeUserPassword, // << AÑADIR
+      updateUserProfile,
+      changeUserPassword,
       createGroup,
       joinGroup,
       leaveGroup,
+      deleteGroup, // << AÑADIDO
       getGroupByName
     }}>
       {children}
