@@ -7,17 +7,16 @@ import {
   StyleSheet,
   Platform,
   TouchableOpacity,
-  Alert
+  Alert // Importar Alert para la confirmación
 } from 'react-native';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons'; // Ionicons ya está importado
 
 let DateTimePicker;
-let DateTimePickerAndroid; // Solo para la API imperativa de Android
+let DateTimePickerAndroid;
 if (Platform.OS !== 'web') {
   DateTimePicker = require('@react-native-community/datetimepicker').default;
   if (Platform.OS === 'android') {
-    // Acceder a DateTimePickerAndroid desde la exportación principal
     DateTimePickerAndroid = require('@react-native-community/datetimepicker').DateTimePickerAndroid;
   }
 }
@@ -26,14 +25,14 @@ import { GroupContext } from '../context/GroupContext';
 import { useTheme } from '../context/ThemeContext';
 
 export default function RemindersScreen() {
-  const { reminders, addReminder, currentGroup } = useContext(GroupContext);
+  const { reminders, addReminder, deleteReminder, currentGroup } = useContext(GroupContext); // <<< OBTENER deleteReminder DEL CONTEXTO
   const { theme } = useTheme();
   const styles = getThemedStyles(theme);
 
   const [text, setText] = useState('');
   const [date, setDate] = useState(new Date());
   const [isDateSet, setIsDateSet] = useState(false);
-  const [showPicker, setShowPicker] = useState(false); // Para el picker de iOS
+  const [showPicker, setShowPicker] = useState(false);
 
   const [localReminders, setLocalReminders] = useState(reminders);
 
@@ -51,14 +50,7 @@ export default function RemindersScreen() {
       Alert.alert('Error', 'Por favor, selecciona un grupo primero.');
       return;
     }
-
-    // DEBUG LOGS (se pueden quitar una vez funcione)
-    console.log('[RemindersScreen] handleAdd:');
-    console.log('  isDateSet:', isDateSet);
-    console.log('  Estado de "date":', date);
-    const dateToSend = isDateSet ? date : null;
-    console.log('  Fecha que se pasará a addReminder:', dateToSend);
-    
+    const dateToSend = isDateSet ? date : null;    
     try {
       await addReminder(t, dateToSend);
       setText('');
@@ -70,28 +62,22 @@ export default function RemindersScreen() {
     }
   };
   
-  // Manejador para iOS
   const onIOSDateTimeChange = (event, selectedDate) => {
     const currentDate = selectedDate || date;
     if (Platform.OS === 'ios') {
-        setShowPicker(false); // Ocultar el picker modal de iOS
+        setShowPicker(false);
     }
-
-    if (event.type === 'set') { // Solo si el usuario confirma la selección
+    if (event.type === 'set') {
       setDate(currentDate);
       setIsDateSet(true);
     }
-    // Si es 'dismissed' o cualquier otro evento, no consideramos la fecha como "fijada"
   };
 
-  // Función para mostrar los pickers
   const showDateTimePicker = () => {
     if (Platform.OS === 'android' && DateTimePickerAndroid) {
-      // Lógica para Android usando callbacks anidados
       const onDateChangeAndroid = (event, selectedAndroidDate) => {
         if (event.type === 'set' && selectedAndroidDate) {
-          const newDateWithSelectedDay = selectedAndroidDate; // Fecha seleccionada (día, mes, año)
-          
+          const newDateWithSelectedDay = selectedAndroidDate;
           const onTimeChangeAndroid = (timeEvent, selectedAndroidTime) => {
             if (timeEvent.type === 'set' && selectedAndroidTime) {
               const finalDate = new Date(
@@ -103,39 +89,29 @@ export default function RemindersScreen() {
               );
               setDate(finalDate);
               setIsDateSet(true);
-              console.log('[RemindersScreen] Android: Fecha y Hora seleccionadas:', finalDate);
             } else {
-              // Time picker fue cancelado o no se seleccionó hora
-              setIsDateSet(false); // O manejar como fecha parcialmente establecida si se desea
-              console.log('[RemindersScreen] Android: Time picker cancelado.');
+              setIsDateSet(false);
             }
           };
-
           DateTimePickerAndroid.open({
-            value: newDateWithSelectedDay, // Usar la fecha que se acaba de seleccionar
+            value: newDateWithSelectedDay,
             mode: 'time',
             is24Hour: true,
             display: 'default',
             onChange: onTimeChangeAndroid,
           });
-
         } else {
-          // Date picker fue cancelado
           setIsDateSet(false);
-          console.log('[RemindersScreen] Android: Date picker cancelado.');
         }
       };
-
-      console.log('[RemindersScreen] Android: Abriendo Date picker...');
       DateTimePickerAndroid.open({
-        value: date, // El estado 'date' actual como valor inicial
+        value: date,
         mode: 'date',
         display: 'default',
         onChange: onDateChangeAndroid,
       });
-
     } else if (Platform.OS === 'ios') {
-      setShowPicker(true); // Mostrar el componente DateTimePicker para iOS
+      setShowPicker(true);
     }
   };
   
@@ -144,12 +120,38 @@ export default function RemindersScreen() {
     setDate(new Date()); 
   };
 
+  // --- FUNCIÓN PARA MANEJAR EL BORRADO DE UN RECORDATORIO ---
+  const handleDeleteReminder = (reminderId, reminderText) => {
+    Alert.alert(
+      "Confirmar Borrado",
+      `¿Estás seguro de que quieres eliminar el recordatorio "${reminderText}"?`,
+      [
+        {
+          text: "Cancelar",
+          style: "cancel"
+        },
+        {
+          text: "Eliminar",
+          onPress: async () => {
+            try {
+              await deleteReminder(reminderId);
+              // La lista se actualizará automáticamente gracias a onSnapshot en GroupContext
+            } catch (error) {
+              console.error('[RemindersScreen] Error eliminando recordatorio:', error);
+              Alert.alert('Error', 'No se pudo eliminar el recordatorio: ' + (error.message || 'Error desconocido'));
+            }
+          },
+          style: "destructive" // Estilo para iOS que indica acción destructiva
+        }
+      ],
+      { cancelable: true } // Permite cerrar la alerta tocando fuera en Android
+    );
+  };
+
   const renderItem = ({ item, drag, isActive }) => {
     return (
       <ScaleDecorator>
-        <TouchableOpacity
-          onLongPress={drag}
-          disabled={isActive}
+        <View // Cambiado de TouchableOpacity a View para un mejor control de las áreas táctiles
           style={[
             styles.itemContainer,
             isActive && styles.itemActive,
@@ -164,8 +166,25 @@ export default function RemindersScreen() {
               </Text>
             )}
           </View>
-          <Ionicons name="reorder-three-outline" size={24} color={theme.textSecondary} style={styles.dragHandle} />
-        </TouchableOpacity>
+          {/* Contenedor para los iconos de acción */}
+          <View style={styles.actionsContainer}>
+            {/* Icono de Borrado */}
+            <TouchableOpacity 
+              onPress={() => handleDeleteReminder(item.id, item.text)}
+              style={styles.deleteButton}
+            >
+              <Ionicons name="trash-outline" size={24} color={theme.danger || '#FF3B30'} />
+            </TouchableOpacity>
+            {/* Icono de Arrastre (manejador) */}
+            <TouchableOpacity 
+              onLongPress={drag} // O onPressIn={drag} si se prefiere un toque corto para iniciar el arrastre
+              disabled={isActive}
+              style={styles.dragHandleTouchable}
+            >
+              <Ionicons name="reorder-three-outline" size={28} color={theme.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </View>
       </ScaleDecorator>
     );
   };
@@ -214,10 +233,15 @@ export default function RemindersScreen() {
       </TouchableOpacity>
 
       <DraggableFlatList
-        data={localReminders}
+        data={localReminders} // Usar localReminders que se actualiza con `reminders` del contexto
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        onDragEnd={({ data }) => setLocalReminders(data)}
+        onDragEnd={({ data }) => {
+            setLocalReminders(data);
+            // Opcional: Si quieres guardar el orden de arrastre en Firestore,
+            // necesitarías una función similar a updateShoppingListOrder
+            // y un campo 'order' en tus recordatorios.
+        }}
         contentContainerStyle={localReminders.length === 0 && styles.emptyContainer}
         ListEmptyComponent={<Text style={styles.empty}>No hay recordatorios</Text>}
         containerStyle={{ flex: 1 }}
@@ -226,7 +250,6 @@ export default function RemindersScreen() {
   );
 }
 
-// La función getThemedStyles (styles) permanece igual que en la respuesta anterior.
 const getThemedStyles = (theme) => StyleSheet.create({
   container: {
     flex: 1,
@@ -260,7 +283,7 @@ const getThemedStyles = (theme) => StyleSheet.create({
     minHeight: 40, 
   },
   dateButtonText: {
-    color: theme.textLight, 
+    color: theme.textLight,
     fontSize: 15,
     fontWeight: '500',
   },
@@ -295,16 +318,18 @@ const getThemedStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  // ESTILOS MODIFICADOS Y NUEVOS PARA EL ITEM DE LA LISTA
   itemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between', // Para separar contenido de acciones
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 16, // Padding horizontal para el contenido y los iconos
     marginVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: theme.border,
-    backgroundColor: theme.cardBackground, // Añadido para que coincida con isActive
+    backgroundColor: theme.cardBackground,
     shadowColor: theme.shadowColor,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -314,10 +339,10 @@ const getThemedStyles = (theme) => StyleSheet.create({
   itemActive: { 
     shadowOpacity: 0.2,
     elevation: 5,
-    // backgroundColor se maneja dinámicamente en el componente
   },
-  itemContent: {
+  itemContent: { // Contenedor para el texto y la fecha, permite que se expanda
     flex: 1,
+    marginRight: 8, // Espacio antes de los iconos de acción
   },
   itemText: {
     fontSize: 16,
@@ -329,9 +354,19 @@ const getThemedStyles = (theme) => StyleSheet.create({
     color: theme.textSecondary,
     marginTop: 4,
   },
-  dragHandle: { 
-    marginLeft: 10,
+  actionsContainer: { // Nuevo: Contenedor para los iconos de borrado y arrastre
+    flexDirection: 'row',
+    alignItems: 'center',
   },
+  deleteButton: { // Nuevo: Estilo para el botón (área táctil) de borrado
+    padding: 8, // Aumenta el área táctil alrededor del icono
+    marginRight: 0, // Ajusta según sea necesario
+  },
+  dragHandleTouchable: { // Nuevo: Estilo para el botón (área táctil) de arrastre
+    padding: 8, // Aumenta el área táctil alrededor del icono
+    // marginLeft: 4, // Espacio opcional si deleteButton no tiene marginRight
+  },
+  // dragHandle (estilo antiguo) ya no es necesario si usas dragHandleTouchable
   emptyContainer: {
     flexGrow: 1,
     justifyContent: 'center',
