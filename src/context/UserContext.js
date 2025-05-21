@@ -1,5 +1,5 @@
-// src/context/UserContext.js
-import React, { createContext, useState, useEffect } from 'react';
+// FILE: src/context/UserContext.js
+import React, { createContext, useState, useEffect, useRef } from 'react'; // Import useRef
 import { auth, db } from '../services/firebase';
 import {
   createUserWithEmailAndPassword,
@@ -18,7 +18,7 @@ import {
   where,
   updateDoc,
   arrayUnion,
-  arrayRemove, // Asegúrate de que arrayRemove esté aquí si se usa en leaveGroup
+  arrayRemove,
   getDocs,
   runTransaction,
   serverTimestamp
@@ -29,85 +29,133 @@ export const UserContext = createContext();
 export function UserProvider({ children }) {
   const [user, setUser] = useState(null);
   const [groups, setGroups] = useState([]);
+  const groupListenerUnsubscribeRef = useRef(null); // Ref to hold group listener unsubscribe function
 
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (u) => {
+      // Cleanup previous group listener if it exists
+      if (groupListenerUnsubscribeRef.current) {
+        groupListenerUnsubscribeRef.current();
+        groupListenerUnsubscribeRef.current = null;
+      }
+
       if (u) {
         let displayNameFromDb = null;
-        let userEmail = u.email; // Captura el email del objeto 'u'
+        let userEmail = u.email;
+        let selectedIconFromDb = 'person-circle-outline'; // Default icon
 
-        // Intenta obtener el displayName de Firestore como fuente prioritaria tras login/registro
-        // ya que u.displayName puede tardar en actualizarse después de updateProfile.
         try {
             const userDocRef = doc(db, 'users', u.uid);
             const userDocSnap = await getDoc(userDocRef);
-            if (userDocSnap.exists() && userDocSnap.data().displayName) {
-                displayNameFromDb = userDocSnap.data().displayName;
-                // Si el email no estaba en 'u', pero sí en la BD (menos probable pero posible)
-                if (!userEmail && userDocSnap.data().email) {
-                    userEmail = userDocSnap.data().email;
+            if (userDocSnap.exists()) {
+                const userData = userDocSnap.data();
+                displayNameFromDb = userData.displayName;
+                if (userData.selectedIcon) {
+                    selectedIconFromDb = userData.selectedIcon;
+                }
+                if (!userEmail && userData.email) { // Fallback for email
+                    userEmail = userData.email;
                 }
             }
         } catch (error) {
             console.error("Error fetching user details from Firestore in onAuthStateChanged:", error);
         }
         
-        // Establecer el estado del usuario
-        // Prioridad: 1. Nombre de Firestore, 2. Nombre de Firebase Auth, 3. Email (como fallback de nombre)
+        const resolvedName = displayNameFromDb || u.displayName || userEmail;
+        const resolvedIcon = selectedIconFromDb;
+
         setUser({
             uid: u.uid,
-            name: displayNameFromDb || u.displayName || userEmail, // El 'name' aquí es crucial
-            email: userEmail
+            name: resolvedName,
+            email: userEmail,
+            icon: resolvedIcon
         });
 
-        // Listener para los grupos del usuario
+        // Setup new group listener for the current user 'u'
         const groupsQuery = query(
           collection(db, 'groups'),
           where('members', 'array-contains', u.uid)
         );
-        const unsubGroups = onSnapshot(groupsQuery, snap => {
+        // Assign the new unsubscribe function to the ref
+        groupListenerUnsubscribeRef.current = onSnapshot(groupsQuery, snap => {
           setGroups(snap.docs.map(d => ({ id: d.id, ...d.data() })));
         }, error => {
             console.error("Error escuchando grupos:", error);
             setGroups([]);
         });
-        return () => unsubGroups();
-      } else {
+      } else { // User is signed out
         setUser(null);
-        setGroups([]);
+        setGroups([]); // Clear groups
+        // Group listener is already cleaned up at the start of this callback or will be by useEffect cleanup
       }
     });
-    return () => unsubscribeAuth();
-  }, []);
+    
+    // Cleanup function for the useEffect: Unsubscribe from auth and any active group listener
+    return () => {
+      unsubscribeAuth();
+      if (groupListenerUnsubscribeRef.current) {
+        groupListenerUnsubscribeRef.current();
+      }
+    };
+  }, []); // Empty dependency array: effect runs once on mount, cleans up on unmount
 
-  const register = async (name, email, password) => {
+  const register = async (name, email, password, iconName) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
+    
+    // Update Firebase Auth profile (displayName)
     await updateProfile(cred.user, { displayName: name });
 
+    const finalIconName = iconName || 'person-circle-outline';
+    
+    // Store/Update user details in Firestore (including displayName and selectedIcon)
     const userDocRef = doc(db, 'users', cred.user.uid);
     await setDoc(userDocRef, {
       uid: cred.user.uid,
       displayName: name,
       email: email,
+      selectedIcon: finalIconName,
       createdAt: serverTimestamp()
     }, { merge: true });
-    // onAuthStateChanged se encargará de actualizar el estado global del usuario.
+
+    // Force reload of the Firebase Auth user object from server.
+    // This helps ensure that auth.currentUser and the 'u' object in
+    // onAuthStateChanged listeners reflect profile updates sooner.
+    try {
+        if (auth.currentUser) { // currentUser should be cred.user at this point
+            await auth.currentUser.reload();
+        }
+    } catch (reloadError) {
+        console.warn("User reload failed after registration:", reloadError);
+    }
+    
+    // Explicitly set the user state in the context AFTER all backend updates.
+    // This ensures the UI reflects the correct name and icon *immediately* after registration.
+    setUser({
+      uid: cred.user.uid,
+      name: name,             // Use the definitive name passed to register
+      email: email,
+      icon: finalIconName     // Use the definitive icon
+    });
+    // The onAuthStateChanged listener will also fire and should confirm this state,
+    // and it will handle setting up group listeners.
   };
 
   const login = async (email, password) => {
     await signInWithEmailAndPassword(auth, email, password);
-    // onAuthStateChanged se encargará de actualizar el estado.
+    // onAuthStateChanged will handle setting user state and group listeners.
+    // Consider auth.currentUser.reload() here too if experiencing staleness after login.
   };
 
   const logout = async () => {
     await signOut(auth);
+    // onAuthStateChanged will set user to null and clear groups.
   };
 
   const createGroup = async (groupName) => {
     if (!user) throw new Error('Usuario no autenticado. No se puede crear el grupo.');
     if (!groupName || groupName.trim() === '') throw new Error('El nombre del grupo no puede estar vacío.');
 
-    if (groups.length >= 5) { // Límite de grupos
+    if (groups.length >= 5) {
       throw new Error("No puedes crear más grupos. Ya estás en el máximo de 5 grupos.");
     }
 
@@ -130,7 +178,7 @@ export function UserProvider({ children }) {
           members: [user.uid],
           owner: user.uid,
           createdAt: serverTimestamp(),
-          pendingRequestsCount: 0
+          pendingRequestsCount: 0 
         });
 
         transaction.set(groupNameRef, {
@@ -150,7 +198,7 @@ export function UserProvider({ children }) {
     if (!user) throw new Error('Usuario no autenticado');
     if (!groupIdToJoin) throw new Error('ID de grupo no proporcionado.');
 
-    if (groups.length >= 5) { // Límite de grupos
+    if (groups.length >= 5) {
       throw new Error("No puedes unirte a más grupos. Ya estás en el máximo de 5 grupos.");
     }
     
@@ -166,7 +214,6 @@ export function UserProvider({ children }) {
             throw new Error('Ya tienes una solicitud pendiente para unirte a este grupo.');
         }
         
-        // Asegurarse de que user.name para requestingUserName esté bien definido
         const currentUserNameForRequest = user.name || auth.currentUser?.displayName || user.email || "Usuario Solicitante";
 
         await setDoc(requestDocRef, {
@@ -174,7 +221,7 @@ export function UserProvider({ children }) {
             requestingUserName: currentUserNameForRequest,
             status: 'pending',
             requestedAt: serverTimestamp(),
-            groupName: groupNameToJoin
+            groupName: groupNameToJoin 
         });
     } catch (error) {
         console.error("Error creando solicitud de unión:", error.message);

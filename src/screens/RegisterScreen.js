@@ -1,3 +1,4 @@
+// FILE: src/screens/RegisterScreen.js
 // src/screens/RegisterScreen.js
 import React, { useState, useContext } from 'react';
 import {
@@ -15,20 +16,32 @@ import {
 import * as Animatable from 'react-native-animatable';
 import { UserContext } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons'; // Asegúrate de que esté importado
+
+// Definir los iconos disponibles (puedes personalizarlos)
+const AVAILABLE_USER_ICONS = [
+  { name: 'person-circle-outline', family: 'Ionicons' }, // Icono por defecto
+  { name: 'happy-outline', family: 'Ionicons' },
+  { name: 'leaf-outline', family: 'Ionicons' },
+  { name: 'rocket-outline', family: 'Ionicons' },
+  { name: 'sparkles-outline', family: 'Ionicons' },
+  { name: 'star-outline', family: 'Ionicons' },
+];
+const DEFAULT_ICON_NAME = 'person-circle-outline';
 
 export default function RegisterScreen({ navigation }) {
   const { user, register, logout } = useContext(UserContext);
   const { theme } = useTheme();
-  const styles = getStyles(theme); // Reutilizamos la función getStyles con ajustes menores si es necesario
+  const styles = getStyles(theme);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [selectedIconName, setSelectedIconName] = useState(DEFAULT_ICON_NAME); // <--- Nuevo estado
 
 
-  if (user) { // Este caso es menos probable aquí, pero por consistencia
+  if (user) {
     return (
       <View style={styles.container}>
          <Animatable.View animation="fadeInDown" duration={800} style={styles.loggedInContainer}>
@@ -53,7 +66,7 @@ export default function RegisterScreen({ navigation }) {
       return;
     }
     try {
-      await register(name.trim(), email.trim(), password);
+      await register(name.trim(), email.trim(), password, selectedIconName); // <--- Pasar selectedIconName
       // La navegación se maneja automáticamente
     } catch (err) {
       Alert.alert('Error de Registro', err.message || 'No se pudo completar el registro.');
@@ -113,6 +126,26 @@ export default function RegisterScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
+          <Text style={styles.label}>Elige tu avatar:</Text>
+          <View style={styles.iconSelectorContainer}>
+            {AVAILABLE_USER_ICONS.map((iconData) => (
+              <TouchableOpacity
+                key={iconData.name}
+                style={[
+                  styles.iconWrapper,
+                  selectedIconName === iconData.name && styles.selectedIconWrapper,
+                ]}
+                onPress={() => setSelectedIconName(iconData.name)}
+              >
+                <Ionicons 
+                  name={iconData.name} 
+                  size={40} 
+                  color={selectedIconName === iconData.name ? theme.primary : theme.textSecondary} 
+                />
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <Animatable.View animation="pulse" iterationCount="infinite" delay={1000} duration={1500}>
             <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
               <Text style={styles.buttonTextPrimary}>Crear cuenta</Text>
@@ -128,8 +161,6 @@ export default function RegisterScreen({ navigation }) {
   );
 }
 
-// Reutilizamos la función getStyles de LoginScreen, ya que son muy similares.
-// Si necesitas estilos específicos para RegisterScreen, puedes duplicar y modificar getStyles.
 const getStyles = (theme) => StyleSheet.create({
   keyboardAvoidingContainer: {
     flex: 1,
@@ -232,5 +263,29 @@ const getStyles = (theme) => StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
     color: theme.textSecondary,
-  }
+  },
+  // Estilos para el selector de iconos
+  label: {
+    fontSize: 16,
+    color: theme.textPrimary,
+    marginBottom: 10,
+    marginTop: 15,
+  },
+  iconSelectorContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  iconWrapper: {
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    margin: 5,
+  },
+  selectedIconWrapper: {
+    borderColor: theme.primary,
+    backgroundColor: theme.inputBackground,
+  },
 });
