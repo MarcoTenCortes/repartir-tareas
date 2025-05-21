@@ -1,35 +1,41 @@
-// src/screens/ShoppingScreen.js
-import React, { useContext, useState } from 'react';
+// FILE: src/screens/ShoppingScreen.js
+import React, { useContext, useState, useCallback } from 'react'; // Añadir useCallback
 import {
   View,
   TextInput,
-  FlatList,
+  // FlatList, // Se reemplazará por DraggableFlatList
   Text,
   StyleSheet,
   TouchableOpacity,
   Alert,
-  ImageBackground, // Añadido para un posible fondo de imagen
-  KeyboardAvoidingView, // Añadido para mejorar la interacción con el teclado
-  Platform // Añadido para comportamiento específico de la plataforma
+  ImageBackground, 
+  KeyboardAvoidingView, 
+  Platform 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+// Importar DraggableFlatList y ScaleDecorator
+import DraggableFlatList, { RenderItemParams, ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GroupContext } from '../context/GroupContext';
-import { useTheme } from '../context/ThemeContext'; // Importar useTheme
+import { useTheme } from '../context/ThemeContext'; 
 
-// Conceptual: Si deseas usar una imagen de fondo de papel, deberías añadirla a tus assets.
 // const paperBackgroundAsset = require('../../assets/images/shopping_list_bg.png');
 
 export default function ShoppingScreen() {
-  const { shoppingList, addShoppingItem, toggleBought, deleteShoppingItem, currentGroup } = useContext(GroupContext);
-  const { theme } = useTheme(); // Usar el tema global de la aplicación
+  const { 
+    shoppingList, 
+    addShoppingItem, 
+    toggleBought, 
+    deleteShoppingItem, 
+    currentGroup,
+    updateShoppingListOrder // Importar la nueva función del contexto
+  } = useContext(GroupContext);
+  const { theme } = useTheme(); 
   const [itemText, setItemText] = useState('');
 
-  // Colores específicos para la estética de la lista de la compra
-  const paperColor = '#FFF9E6'; // Un color crema, ligeramente amarillento como el papel
-  const inkColor = '#4A4A4A';   // Gris oscuro para el texto, simulando lápiz o tinta
-  const lineColor = '#B0C4DE';  // Azul acero claro para las líneas del papel
+  const paperColor = '#FFF9E6'; 
+  const inkColor = '#4A4A4A';   
+  const lineColor = '#B0C4DE';  
 
-  // Generar estilos que combinan el tema global con los colores personalizados de la lista
   const styles = getThemedStyles(theme, paperColor, inkColor, lineColor);
 
   const handleAdd = async () => {
@@ -78,177 +84,209 @@ export default function ShoppingScreen() {
     );
   };
 
-  const handleToggleBought = async (itemId, currentBoughtStatus) => {
-    if (!currentGroup) return;
-    try {
-      await toggleBought(itemId, !currentBoughtStatus);
-    } catch (error) {
-      console.error("Error actualizando estado de compra:", error);
-      Alert.alert('Error', 'No se pudo actualizar el estado del artículo.');
+  // NUEVA FUNCIÓN: Manejador para cuando termina el arrastre
+  const handleDragEnd = useCallback(async ({ data: reorderedData }) => {
+    if (!currentGroup) {
+      Alert.alert("Error", "No hay grupo seleccionado para reordenar.");
+      // Podrías revertir el estado visual si DraggableFlatList no lo hace,
+      // pero usualmente la actualización del contexto lo arreglará.
+      return;
     }
-  };
+    try {
+      // `shoppingList` en el contexto se actualizará a través del listener de Firestore
+      // después de que `updateShoppingListOrder` complete la escritura.
+      // DraggableFlatList actualiza su 'data' internamente para la UI de forma optimista.
+      await updateShoppingListOrder(reorderedData);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo guardar el nuevo orden de la lista.');
+      console.error("Error actualizando el orden de la lista:", error);
+      // Aquí podrías forzar una recarga o revertir el estado visual si es necesario.
+    }
+  }, [currentGroup, updateShoppingListOrder]);
 
-  const renderShoppingItem = ({ item }) => (
-    <View style={styles.listItemContainer}>
-      <TouchableOpacity
-        style={styles.checkboxContainer}
-        onPress={() => handleToggleBought(item.id, item.bought)}
-      >
-        <Ionicons
-          name={item.bought ? 'checkbox-outline' : 'square-outline'}
-          size={28}
-          color={item.bought ? theme.success : inkColor} // Color del checkbox
-        />
-      </TouchableOpacity>
-      <View style={styles.itemTextContainer}>
-        <Text style={[styles.listItemText, item.bought && styles.boughtText]}>
-          {item.text}
-        </Text>
-        {item.addedByName && ( // Mostrar quién añadió el artículo si está disponible
-          <Text style={styles.addedByText}>(Por: {item.addedByName})</Text>
-        )}
-      </View>
-      <TouchableOpacity
-        style={styles.deleteButton}
-        onPress={() => handleDelete(item.id, item.text)}
-      >
-        <Ionicons name="trash-bin-outline" size={24} color={theme.error} />
-      </TouchableOpacity>
-    </View>
-  );
+
+  // MODIFICADO: renderItem ahora se llama renderShoppingItem y usa props de DraggableFlatList
+  const renderShoppingItem = useCallback(({ item, drag, isActive }) => {
+    return (
+      <ScaleDecorator>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => toggleBought(item.id, !item.bought)}
+          onLongPress={drag} // Activa el arrastre con pulsación larga
+          disabled={isActive} // Deshabilita onPress y onLongPress mientras se arrastra
+          style={[
+            styles.itemContainer,
+            // Podrías añadir un estilo visual para 'isActive' si ScaleDecorator no es suficiente
+            // isActive && { backgroundColor: theme.primaryLight, elevation: 5 } 
+          ]}
+        >
+          <View style={styles.itemContent}>
+            <Ionicons
+              name={item.bought ? "checkbox-outline" : "square-outline"}
+              size={28}
+              color={item.bought ? theme.success : inkColor}
+              style={styles.checkboxIcon}
+            />
+            <Text style={[styles.itemText, item.bought && styles.itemTextBought]}>
+              {item.text}
+            </Text>
+          </View>
+          <TouchableOpacity 
+            onPress={() => handleDelete(item.id, item.text)} 
+            style={styles.deleteButton}
+            disabled={isActive} // También deshabilita el botón de eliminar durante el arrastre
+          >
+            <Ionicons name="trash-bin-outline" size={24} color={theme.error} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </ScaleDecorator>
+    );
+  }, [theme, inkColor, styles, toggleBought, handleDelete]); // Añadir dependencias de useCallback
+
 
   return (
+    // GestureHandlerRootView debe envolver la aplicación, usualmente en App.js o el navegador raíz.
+    // Si no está ya, necesitarías añadirlo aquí o más arriba.
+    // Como está en App.js, no se necesita aquí.
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={{ flex: 1, backgroundColor: theme.background }} // Fondo general de la app
+      style={styles.keyboardAvoidingContainer}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 64 : 0} // Ajustar según altura del header
     >
-      {/* 
-        Para usar una imagen de fondo específica para la lista (ej. textura de papel):
-        1. Descomenta la línea de `ImageBackground` abajo.
-        2. Asegúrate de tener una imagen (ej. 'shopping_list_bg.png') en tu carpeta `assets/images/`.
-        3. Descomenta la importación de `paperBackgroundAsset` al inicio del archivo.
-        
-        <ImageBackground source={paperBackgroundAsset} style={styles.background}>
-          ... contenido de la lista ...
-        </ImageBackground>
-        
-        Por ahora, se usa un color sólido para el área de la lista para simular papel.
-      */}
-      <View style={styles.container}> 
-        <Text style={styles.title}>Lista de la Compra</Text>
-        
+      {/* Opcional: Fondo de imagen de papel */}
+      {/* <ImageBackground source={paperBackgroundAsset} style={styles.backgroundImage}> */}
+      <View style={styles.container}>
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="¿Qué necesitas comprar?"
-            placeholderTextColor={theme.placeholder} // Usar color de placeholder del tema
+            placeholder="Añadir a la lista..."
+            placeholderTextColor={theme.placeholder}
             value={itemText}
             onChangeText={setItemText}
-            onSubmitEditing={handleAdd} // Permite añadir con "Enter"
+            onSubmitEditing={handleAdd} // Añadir al presionar Enter
           />
           <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
             <Ionicons name="add-circle-outline" size={32} color={theme.primary} />
           </TouchableOpacity>
         </View>
 
-        <FlatList
+        {/* REEMPLAZADO: FlatList por DraggableFlatList */}
+        <DraggableFlatList
           data={shoppingList}
+          keyExtractor={(item) => item.id} // Asegúrate que cada item tiene un id único y estable
           renderItem={renderShoppingItem}
-          keyExtractor={item => item.id}
-          ListEmptyComponent={<Text style={styles.emptyListText}>¡Tu lista de la compra está vacía!</Text>}
-          contentContainerStyle={styles.listContentContainer}
+          onDragEnd={handleDragEnd}
+          activationDistance={10}
+           pressDuration={5}
+          ListEmptyComponent={
+            <View style={styles.emptyListContainer}>
+              <Ionicons name="cart-outline" size={60} color={theme.textSecondary} />
+              <Text style={styles.emptyListText}>
+                {currentGroup ? "Tu lista de la compra está vacía." : "Selecciona un grupo para ver la lista."}
+              </Text>
+            </View>
+          }
+          contentContainerStyle={shoppingList.length === 0 ? styles.listContentEmpty : styles.listContent}
+          // containerStyle={{ flex: 1 }} // Si la lista debe ocupar todo el espacio restante
         />
       </View>
+      {/* </ImageBackground> */}
     </KeyboardAvoidingView>
   );
 }
 
-// Función para generar los estilos, incorporando el tema y colores personalizados
+// Función para generar estilos
 const getThemedStyles = (theme, paperColor, inkColor, lineColor) => StyleSheet.create({
-  // background: { // Estilo para ImageBackground si se usa una imagen de fondo
-  //   flex: 1,
-  // },
-  container: { // Contenedor principal de la lista, simula una hoja de papel
+  keyboardAvoidingContainer: {
     flex: 1,
+    backgroundColor: paperColor, // Fondo de "papel"
+  },
+  // backgroundImage: {
+  //   flex: 1,
+  //   resizeMode: 'cover', // o 'stretch'
+  // },
+  container: {
+    flex: 1,
+    paddingTop: Platform.OS === 'android' ? 20 : 10, // Más espacio arriba en Android
     paddingHorizontal: 15,
-    paddingTop: Platform.OS === 'android' ? 20 : 10,
-    backgroundColor: paperColor, // Color de fondo tipo papel
-    margin: 10, // Margen para que la "hoja" destaque sobre el fondo de la app
-    borderRadius: 10, // Bordes redondeados para la "hoja"
-    shadowColor: '#000', // Sombra para dar profundidad
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: theme.cardBackground, // Un fondo ligeramente diferente para el input
+    borderRadius: 12,
+    borderBottomWidth: 2, // Simula una línea más gruesa de cuaderno
+    borderBottomColor: lineColor, 
+    shadowColor: theme.shadowColor,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3, // Elevación para Android
+    shadowRadius: 3,
+    elevation: 3,
   },
-  title: { // Estilo para el título "Lista de la Compra"
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: inkColor, // Color de tinta para el título
-    textAlign: 'center',
-    marginBottom: 20,
-    // Intenta usar una fuente que parezca más manuscrita o de cuaderno
-    fontFamily: Platform.OS === 'ios' ? 'MarkerFelt-Thin' : 'sans-serif-condensed', 
-  },
-  inputContainer: { // Contenedor para el campo de texto y el botón de añadir
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    borderBottomWidth: 1, // Línea debajo del input, como en un cuaderno
-    borderBottomColor: lineColor,
-    paddingBottom: 10,
-  },
-  input: { // Estilo para el campo de texto
+  input: {
     flex: 1,
-    height: 50,
-    fontSize: 18,
-    color: inkColor, // Color de tinta para el texto del input
-    paddingHorizontal: 10,
-  },
-  addButton: { // Estilo para el botón de añadir
-    paddingLeft: 15,
-    paddingVertical: 5,
-  },
-  listContentContainer: { // Estilo para el contenido de la FlatList
-    paddingBottom: 20,
-  },
-  listItemContainer: { // Contenedor para cada artículo de la lista
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    borderBottomWidth: 1, // Líneas separadoras entre artículos
-    borderBottomColor: lineColor,
-  },
-  checkboxContainer: { // Contenedor para el checkbox
-    paddingRight: 12,
-  },
-  itemTextContainer: { // Contenedor para el texto del artículo y quién lo añadió
-    flex: 1,
-  },
-  listItemText: { // Estilo para el texto del artículo
     fontSize: 17,
+    paddingVertical: 10,
+    color: inkColor, // Color de tinta para el input
+  },
+  addButton: {
+    marginLeft: 10,
+    padding: 5,
+  },
+  itemContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 15, // Más padding vertical para mejor toque
+    paddingHorizontal: 10,
+    // marginBottom: 8, // Espacio entre items si no hay líneas
+    backgroundColor: 'transparent', // El fondo es el del contenedor principal (papel)
+    borderBottomWidth: 1, // Líneas de "cuaderno"
+    borderBottomColor: lineColor, 
+  },
+  itemContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1, // Para que el texto ocupe el espacio disponible
+  },
+  checkboxIcon: {
+    marginRight: 12, // Más espacio
+  },
+  itemText: {
+    fontSize: 18, // Texto más grande
     color: inkColor, // Color de tinta
+    flex: 1, // Para que el texto se ajuste y no empuje el botón de borrar
   },
-  boughtText: { // Estilo para artículos comprados (tachados)
+  itemTextBought: {
     textDecorationLine: 'line-through',
-    color: theme.textSecondary, // Color más tenue del tema para texto secundario
-  },
-  addedByText: { // Estilo para el texto "Añadido por:"
-    fontSize: 12,
-    color: theme.textSecondary, // Color tenue
+    color: theme.textSecondary, // Color más tenue para items comprados
     fontStyle: 'italic',
-    marginTop: 2,
   },
-  deleteButton: { // Estilo para el botón de eliminar
-    paddingLeft: 15, 
+  deleteButton: {
+    paddingLeft: 10, // Área de toque para el botón de eliminar
     paddingVertical: 5,
   },
-  emptyListText: { // Estilo para el mensaje cuando la lista está vacía
-    textAlign: 'center',
+  emptyListContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     marginTop: 50,
-    fontSize: 18,
-    color: inkColor, // Color de tinta
-    fontStyle: 'italic',
   },
+  emptyListText: {
+    marginTop: 15,
+    fontSize: 17,
+    color: theme.textSecondary,
+    textAlign: 'center',
+  },
+  listContent: {
+    paddingBottom: 20, // Espacio al final de la lista
+  },
+  listContentEmpty: { // Estilo para cuando la lista está vacía y ocupa toda la pantalla
+    flexGrow: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  }
 });
-
