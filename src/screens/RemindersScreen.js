@@ -7,10 +7,11 @@ import {
   StyleSheet,
   Platform,
   TouchableOpacity,
-  Alert // Importar Alert para la confirmación
+  Alert,
+  ImageBackground // <<<< IMPORTADO ImageBackground
 } from 'react-native';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
-import { Ionicons } from '@expo/vector-icons'; // Ionicons ya está importado
+import { Ionicons } from '@expo/vector-icons';
 
 let DateTimePicker;
 let DateTimePickerAndroid;
@@ -25,7 +26,7 @@ import { GroupContext } from '../context/GroupContext';
 import { useTheme } from '../context/ThemeContext';
 
 export default function RemindersScreen() {
-  const { reminders, addReminder, deleteReminder, currentGroup } = useContext(GroupContext); // <<< OBTENER deleteReminder DEL CONTEXTO
+  const { reminders, addReminder, deleteReminder, currentGroup } = useContext(GroupContext);
   const { theme } = useTheme();
   const styles = getThemedStyles(theme);
 
@@ -120,7 +121,6 @@ export default function RemindersScreen() {
     setDate(new Date()); 
   };
 
-  // --- FUNCIÓN PARA MANEJAR EL BORRADO DE UN RECORDATORIO ---
   const handleDeleteReminder = (reminderId, reminderText) => {
     Alert.alert(
       "Confirmar Borrado",
@@ -135,27 +135,28 @@ export default function RemindersScreen() {
           onPress: async () => {
             try {
               await deleteReminder(reminderId);
-              // La lista se actualizará automáticamente gracias a onSnapshot en GroupContext
             } catch (error) {
               console.error('[RemindersScreen] Error eliminando recordatorio:', error);
               Alert.alert('Error', 'No se pudo eliminar el recordatorio: ' + (error.message || 'Error desconocido'));
             }
           },
-          style: "destructive" // Estilo para iOS que indica acción destructiva
+          style: "destructive"
         }
       ],
-      { cancelable: true } // Permite cerrar la alerta tocando fuera en Android
+      { cancelable: true }
     );
   };
 
   const renderItem = ({ item, drag, isActive }) => {
     return (
       <ScaleDecorator>
-        <View // Cambiado de TouchableOpacity a View para un mejor control de las áreas táctiles
+        <View
           style={[
             styles.itemContainer,
             isActive && styles.itemActive,
-            { backgroundColor: isActive ? theme.primaryLight : theme.cardBackground },
+            // Si quieres que los items también sean translúcidos, ajusta theme.cardBackground
+            // para que sea un color RGBA, ej: 'rgba(255, 255, 255, 0.9)'
+            { backgroundColor: isActive ? theme.primaryLight : theme.cardBackground }, 
           ]}
         >
           <View style={styles.itemContent}>
@@ -166,18 +167,15 @@ export default function RemindersScreen() {
               </Text>
             )}
           </View>
-          {/* Contenedor para los iconos de acción */}
           <View style={styles.actionsContainer}>
-            {/* Icono de Borrado */}
             <TouchableOpacity 
               onPress={() => handleDeleteReminder(item.id, item.text)}
               style={styles.deleteButton}
             >
               <Ionicons name="trash-outline" size={24} color={theme.danger || '#FF3B30'} />
             </TouchableOpacity>
-            {/* Icono de Arrastre (manejador) */}
             <TouchableOpacity 
-              onLongPress={drag} // O onPressIn={drag} si se prefiere un toque corto para iniciar el arrastre
+              onLongPress={drag}
               disabled={isActive}
               style={styles.dragHandleTouchable}
             >
@@ -190,71 +188,97 @@ export default function RemindersScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder="Nuevo recordatorio"
-          placeholderTextColor={theme.placeholder}
-          value={text}
-          onChangeText={setText}
-        />
-        {Platform.OS !== 'web' && (DateTimePicker || DateTimePickerAndroid) && (
-          <TouchableOpacity style={styles.dateButton} onPress={showDateTimePicker}>
-            <Text style={styles.dateButtonText}>{isDateSet ? date.toLocaleDateString() : "Fecha"}</Text>
+    // <<<< MODIFICACIÓN: Envolver con ImageBackground >>>>
+    <ImageBackground
+      // CAMBIA ESTA RUTA a tu imagen de fondo. Asegúrate que la imagen esté en tu proyecto.
+      source={require('../../assets/prisa.png')} 
+      style={styles.backgroundImage}
+      // Ajusta la opacidad de la imagen de fondo como necesites (0.0 a 1.0)
+      imageStyle={{ opacity: 1.0 }} // Opacidad solo para la imagen, no para el contenido
+      resizeMode="contain" // O 'contain', 'stretch', etc., según cómo quieras que se muestre la imagen
+    >
+      <View style={styles.container}>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Nuevo recordatorio"
+            placeholderTextColor={theme.placeholder}
+            value={text}
+            onChangeText={setText}
+            // Si quieres que el input también sea translúcido, ajusta theme.inputBackground
+            // para que sea un color RGBA, ej: 'rgba(255, 255, 255, 0.9)'
+          />
+          {Platform.OS !== 'web' && (DateTimePicker || DateTimePickerAndroid) && (
+            <TouchableOpacity style={styles.dateButton} onPress={showDateTimePicker}>
+              <Text style={styles.dateButtonText}>{isDateSet ? date.toLocaleDateString() : "Fecha"}</Text>
+            </TouchableOpacity>
+          )}
+          {Platform.OS === 'web' && (
+            <Text style={{ marginLeft: 8, alignSelf: 'center', color: theme.textSecondary }}>
+              (Selector de fecha no disponible en web)
+            </Text>
+          )}
+        </View>
+        
+        {isDateSet && Platform.OS !== 'web' && (
+          <TouchableOpacity onPress={removeDate} style={styles.removeDateButton}>
+              <Text style={styles.removeDateButtonText}>Quitar Fecha</Text>
           </TouchableOpacity>
         )}
-        {Platform.OS === 'web' && (
-          <Text style={{ marginLeft: 8, alignSelf: 'center', color: theme.textSecondary }}>
-            (Selector de fecha no disponible en web)
-          </Text>
+
+        {showPicker && Platform.OS === 'ios' && DateTimePicker && (
+          <DateTimePicker
+            testID="dateTimePickerIOS"
+            value={date}
+            mode="datetime"
+            is24Hour={true}
+            display="default" 
+            onChange={onIOSDateTimeChange}
+          />
         )}
-      </View>
-      
-      {isDateSet && Platform.OS !== 'web' && (
-        <TouchableOpacity onPress={removeDate} style={styles.removeDateButton}>
-            <Text style={styles.removeDateButtonText}>Quitar Fecha</Text>
+
+        <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
+          <Text style={styles.addButtonText}>Añadir Recordatorio</Text>
         </TouchableOpacity>
-      )}
 
-      {showPicker && Platform.OS === 'ios' && DateTimePicker && (
-        <DateTimePicker
-          testID="dateTimePickerIOS"
-          value={date}
-          mode="datetime"
-          is24Hour={true}
-          display="default" 
-          onChange={onIOSDateTimeChange}
+        <DraggableFlatList
+          data={localReminders}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          onDragEnd={({ data }) => {
+              setLocalReminders(data);
+          }}
+          contentContainerStyle={localReminders.length === 0 && styles.emptyContainer}
+          ListEmptyComponent={<Text style={styles.empty}>No hay recordatorios</Text>}
+          containerStyle={{ flex: 1 }}
         />
-      )}
-
-      <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
-        <Text style={styles.addButtonText}>Añadir Recordatorio</Text>
-      </TouchableOpacity>
-
-      <DraggableFlatList
-        data={localReminders} // Usar localReminders que se actualiza con `reminders` del contexto
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        onDragEnd={({ data }) => {
-            setLocalReminders(data);
-            // Opcional: Si quieres guardar el orden de arrastre en Firestore,
-            // necesitarías una función similar a updateShoppingListOrder
-            // y un campo 'order' en tus recordatorios.
-        }}
-        contentContainerStyle={localReminders.length === 0 && styles.emptyContainer}
-        ListEmptyComponent={<Text style={styles.empty}>No hay recordatorios</Text>}
-        containerStyle={{ flex: 1 }}
-      />
-    </View>
+      </View>
+    </ImageBackground> // <<<< FIN DE ImageBackground >>>>
   );
 }
 
 const getThemedStyles = (theme) => StyleSheet.create({
+  // <<<< NUEVO ESTILO para ImageBackground >>>>
+  backgroundImage: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
   container: {
     flex: 1,
     padding: 16,
-    backgroundColor: theme.background,
+    // <<<< MODIFICACIÓN del backgroundColor del container >>>>
+    // El color de fondo del contenedor principal ahora es translúcido.
+    // Ajusta el color (los tres primeros valores de rgba) y la opacidad (el último valor, 0.85)
+    // según tu tema y la visibilidad deseada de la imagen de fondo.
+    // Ejemplo para un tema claro:
+    backgroundColor: 'rgba(255, 255, 255, 0.85)', 
+    // Ejemplo para un tema oscuro (si theme.background fuera negro o gris oscuro):
+    // backgroundColor: `rgba(30, 30, 30, 0.85)`,
+    // Si quieres basarte en tu theme.background, y este es un color hex (ej. #RRGGBB),
+    // puedes convertirlo a rgba manualmente aquí o modificarlo en tu ThemeContext.
+    // Por ejemplo, si theme.background es '#FFFFFF', usa 'rgba(255,255,255,0.85)'.
+    // Si theme.background es '#1E1E1E', usa 'rgba(30,30,30,0.85)'.
   },
   inputRow: {
     flexDirection: 'row',
@@ -265,7 +289,7 @@ const getThemedStyles = (theme) => StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: theme.border,
-    backgroundColor: theme.inputBackground,
+    backgroundColor: theme.inputBackground, // Para transparencia aquí, theme.inputBackground debe ser rgba
     color: theme.textPrimary,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -292,7 +316,7 @@ const getThemedStyles = (theme) => StyleSheet.create({
     marginBottom: 10,
     paddingVertical: 6,
     paddingHorizontal: 10,
-    backgroundColor: theme.cardBackground,
+    backgroundColor: theme.cardBackground, // También podría ser translúcido si theme.cardBackground es rgba
     borderColor: theme.border,
     borderWidth: 1,
     borderRadius: 6,
@@ -318,31 +342,31 @@ const getThemedStyles = (theme) => StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  // ESTILOS MODIFICADOS Y NUEVOS PARA EL ITEM DE LA LISTA
   itemContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between', // Para separar contenido de acciones
+    justifyContent: 'space-between',
     paddingVertical: 12,
-    paddingHorizontal: 16, // Padding horizontal para el contenido y los iconos
+    paddingHorizontal: 16,
     marginVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: theme.border,
-    backgroundColor: theme.cardBackground,
+    backgroundColor: theme.cardBackground, // Para transparencia aquí, theme.cardBackground debe ser rgba
     shadowColor: theme.shadowColor,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 2,
     elevation: 1,
+    
   },
   itemActive: { 
     shadowOpacity: 0.2,
     elevation: 5,
   },
-  itemContent: { // Contenedor para el texto y la fecha, permite que se expanda
+  itemContent: {
     flex: 1,
-    marginRight: 8, // Espacio antes de los iconos de acción
+    marginRight: 8,
   },
   itemText: {
     fontSize: 16,
@@ -354,19 +378,17 @@ const getThemedStyles = (theme) => StyleSheet.create({
     color: theme.textSecondary,
     marginTop: 4,
   },
-  actionsContainer: { // Nuevo: Contenedor para los iconos de borrado y arrastre
+  actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  deleteButton: { // Nuevo: Estilo para el botón (área táctil) de borrado
-    padding: 8, // Aumenta el área táctil alrededor del icono
-    marginRight: 0, // Ajusta según sea necesario
+  deleteButton: {
+    padding: 8,
+    marginRight: 0,
   },
-  dragHandleTouchable: { // Nuevo: Estilo para el botón (área táctil) de arrastre
-    padding: 8, // Aumenta el área táctil alrededor del icono
-    // marginLeft: 4, // Espacio opcional si deleteButton no tiene marginRight
+  dragHandleTouchable: {
+    padding: 8,
   },
-  // dragHandle (estilo antiguo) ya no es necesario si usas dragHandleTouchable
   emptyContainer: {
     flexGrow: 1,
     justifyContent: 'center',
@@ -378,3 +400,4 @@ const getThemedStyles = (theme) => StyleSheet.create({
     fontSize: 16,
   },
 });
+

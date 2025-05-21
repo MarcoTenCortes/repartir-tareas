@@ -2,7 +2,7 @@
 import React, { useState, useContext, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, Button, FlatList, Alert,
-  StyleSheet, Dimensions, TouchableOpacity
+  StyleSheet, Dimensions, TouchableOpacity, Image // <--- Image ha sido añadido aquí
 } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -19,7 +19,7 @@ import { useTheme } from '../context/ThemeContext';
 const AVAILABLE_SHAPES = ['rectangle', 'circle'];
 const MIN_ROOM_SIZE = 40;
 const MAX_ROOM_SIZE = 250;
-const SNAP_DURATION_HIGHLIGHT_MS = 700; 
+const SNAP_DURATION_HIGHLIGHT_MS = 700;
 
 // --- DraggableRoomComponent ---
 const DraggableRoomComponent = ({
@@ -95,7 +95,7 @@ const DraggableRoomComponent = ({
       if (onUpdateRoomGestureProperties) {
         runOnJS(onUpdateRoomGestureProperties)(room.id, { width: finalWidth, height: finalHeight });
       }
-      scale.value = 1; 
+      scale.value = 1;
     });
 
   const rotationGesture = Gesture.Rotation()
@@ -105,7 +105,7 @@ const DraggableRoomComponent = ({
       if (onUpdateRoomGestureProperties) {
         runOnJS(onUpdateRoomGestureProperties)(room.id, { rotation: newRotationDegrees });
       }
-      rotation.value = 0; 
+      rotation.value = 0;
     });
 
   const doubleTapGesture = Gesture.Tap().numberOfTaps(2).maxDuration(250)
@@ -135,7 +135,6 @@ const DraggableRoomComponent = ({
   );
 };
 
-
 const getScreenStyles = (theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
   listHeaderContainer: { padding: 16 },
@@ -160,6 +159,12 @@ const getScreenStyles = (theme) => StyleSheet.create({
   actionIcon: { marginLeft: 10, padding: 5 },
   emptyTextContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 },
   emptyText: { textAlign: 'center', color: theme.textSecondary, fontSize: 16, paddingHorizontal: 16 },
+  emptyStateImage: { // <--- Nuevo estilo para la imagen
+    width: 100,
+    height: 100,
+    marginTop: 15,
+    resizeMode: 'contain'
+  },
 });
 
 
@@ -174,21 +179,19 @@ const ListHeaderComponent = React.memo(({
     return ( prevProps.currentGroup === nextProps.currentGroup && prevProps.rooms === nextProps.rooms && prevProps.newRoomName === nextProps.newRoomName && prevProps.selectedRoom === nextProps.selectedRoom && prevProps.newTaskName === nextProps.newTaskName && prevProps.highlightedRoomIds === nextProps.highlightedRoomIds && prevProps.handleCreateRoom === nextProps.handleCreateRoom && prevProps.handleSelectRoomForEditing === nextProps.handleSelectRoomForEditing && prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom && prevProps.handleMapLayout === nextProps.handleMapLayout && prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease && prevProps.onUpdateRoomGestureProperties === nextProps.onUpdateRoomGestureProperties && prevProps.styles === nextProps.styles && prevProps.theme === nextProps.theme );
 });
 
-
-
 export default function TasksScreen() {
   const { user } = useContext(UserContext);
   const {
     currentGroup, rooms, createRoom, updateRoomPosition, updateRoomProperties, deleteRoom,
     tasks: allTasks, createTask, assignTaskToUser, unassignTask, deleteTask: deleteTaskFromContext
   } = useContext(GroupContext);
-  const { theme } = useTheme(); 
+  const { theme } = useTheme();
 
   const [newRoomName, setNewRoomName] = useState('');
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [newTaskName, setNewTaskName] = useState('');
   const [highlightedRoomIds, setHighlightedRoomIds] = useState(new Set());
-  const snapHighlightTimers = useRef({}); 
+  const snapHighlightTimers = useRef({});
 
   const styles = useMemo(() => getScreenStyles(theme), [theme]);
   const mapContainerLayout = useSharedValue({ width: 0, height: 0 });
@@ -201,12 +204,12 @@ export default function TasksScreen() {
     if (!newRoomName.trim()) { Alert.alert('Error', 'Nombre hab. vacío'); return; } if (!currentGroup) { Alert.alert('Error', 'Selecciona grupo'); return; }
     try { const cW = mapContainerLayout.value.width || Dimensions.get('window').width * 0.8; const cH = mapContainerLayout.value.height || 250; const iRW = 100; const iRH = 60; const mPX = Math.max(0, cW - iRW); const mPY = Math.max(0, cH - iRH); const iX = Math.floor(Math.random() * mPX); const iY = Math.floor(Math.random() * mPY); await createRoom(newRoomName, { x: iX, y: iY }); setNewRoomName(''); } catch (e) { Alert.alert('Error creando hab.', e.message); }
   }, [newRoomName, currentGroup, createRoom, mapContainerLayout, setNewRoomName]);
-  
+
   const handleRoomDragRelease = useCallback((draggedRoomId, releasePosition, gestureState) => {
     const draggedRoomData = rooms.find(r => r.id === draggedRoomId);
     if (!draggedRoomData) return;
 
-  
+
     if (snapHighlightTimers.current[draggedRoomId]) {
       clearTimeout(snapHighlightTimers.current[draggedRoomId]);
       delete snapHighlightTimers.current[draggedRoomId];
@@ -222,7 +225,7 @@ export default function TasksScreen() {
 
     if (gestureState === 'start') {
 
-      return; 
+      return;
     }
 
     if (gestureState === 'end') {
@@ -247,17 +250,17 @@ export default function TasksScreen() {
         const dRoomCenterX = dRoom.x + dRoom.width / 2;
         const dRoomCenterY = dRoom.y + dRoom.height / 2;
 
-        
+
         if (dRoomCenterX >= tRoom.x && dRoomCenterX < tRoom.x + tRoom.width &&
             dRoomCenterY >= tRoom.y && dRoomCenterY < tRoom.y + tRoom.height) {
-          
-          snappedToTarget = tRoom; 
 
-          
+          snappedToTarget = tRoom;
+
+
           const snapPositions = [
-            { x: tRoom.x - dRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 }, 
+            { x: tRoom.x - dRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 },
             { x: tRoom.x + tRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 },
-            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y - dRoom.height },  
+            { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y - dRoom.height },
             { x: tRoom.x + (tRoom.width - dRoom.width) / 2, y: tRoom.y + tRoom.height },
           ];
 
@@ -265,27 +268,27 @@ export default function TasksScreen() {
           let minDistanceSqToOriginalRelease = Infinity;
 
           snapPositions.forEach(sp => {
-         
+
             const distSq = (dRoom.x - sp.x) ** 2 + (dRoom.y - sp.y) ** 2;
             if (distSq < minDistanceSqToOriginalRelease) {
               minDistanceSqToOriginalRelease = distSq;
               bestSnapPosition = { x: sp.x, y: sp.y };
             }
           });
-          
+
           if (bestSnapPosition) {
             const finalSnapX = Math.max(0, Math.min(bestSnapPosition.x, (mapContainerLayout.value.width || Infinity) - dRoom.width));
             const finalSnapY = Math.max(0, Math.min(bestSnapPosition.y, (mapContainerLayout.value.height || Infinity) - dRoom.height));
-            
+
             updateRoomPosition(draggedRoomId, { x: finalSnapX, y: finalSnapY });
-            
-            
+
+
             setHighlightedRoomIds(prev => new Set([...prev, draggedRoomId, tRoom.id]));
 
-            
+
             if (snapHighlightTimers.current[draggedRoomId]) clearTimeout(snapHighlightTimers.current[draggedRoomId]);
             if (snapHighlightTimers.current[tRoom.id]) clearTimeout(snapHighlightTimers.current[tRoom.id]);
-            
+
             const clearHighlightCallback = (id1, id2) => () => {
               setHighlightedRoomIds(prev => {
                 const newSet = new Set(prev);
@@ -296,13 +299,13 @@ export default function TasksScreen() {
               delete snapHighlightTimers.current[id1];
               delete snapHighlightTimers.current[id2];
             };
-            
+
             const timerCallback = clearHighlightCallback(draggedRoomId, tRoom.id);
             snapHighlightTimers.current[draggedRoomId] = setTimeout(timerCallback, SNAP_DURATION_HIGHLIGHT_MS);
 
-            
 
-            const pairKey = [draggedRoomId, tRoom.id].sort().join('-'); 
+
+            const pairKey = [draggedRoomId, tRoom.id].sort().join('-');
             if (snapHighlightTimers.current[pairKey]) clearTimeout(snapHighlightTimers.current[pairKey]);
             snapHighlightTimers.current[pairKey] = setTimeout(() => {
                  setHighlightedRoomIds(prev => {
@@ -314,7 +317,7 @@ export default function TasksScreen() {
                   delete snapHighlightTimers.current[pairKey];
             }, SNAP_DURATION_HIGHLIGHT_MS);
 
-            break; 
+            break;
           }
         }
       }
@@ -327,7 +330,7 @@ export default function TasksScreen() {
 
       }
     }
-  }, [currentGroup, rooms, updateRoomPosition, mapContainerLayout.value.width, mapContainerLayout.value.height, theme.warning]); 
+  }, [currentGroup, rooms, updateRoomPosition, mapContainerLayout.value.width, mapContainerLayout.value.height, theme.warning]);
 
   const handleSelectRoomForEditing = useCallback((room) => { setSelectedRoom(prev => (prev?.id === room.id ? null : room)); }, [setSelectedRoom]);
 const handleCreateTaskForSelectedRoom = useCallback(async () => {
@@ -336,8 +339,6 @@ const handleCreateTaskForSelectedRoom = useCallback(async () => {
     Alert.alert('Error', 'Nombre tarea vacío.');
     return;
   }
-
-
   if (!selectedRoom) {
     Alert.alert('Error', 'Selecciona hab.');
     return;
@@ -358,11 +359,11 @@ const tasksForSelectedRoom = useMemo(() => {
     : [];
 }, [selectedRoom, allTasks]);
 
-  
+
   const handleUpdateRoomGestureProperties = useCallback(async (roomId, newProps) => {
     if (!roomId || !newProps) return;
-    
-    
+
+
     const pairKeysToClear = Object.keys(snapHighlightTimers.current).filter(key => key.includes(roomId));
     pairKeysToClear.forEach(key => {
         clearTimeout(snapHighlightTimers.current[key]);
@@ -383,12 +384,12 @@ const tasksForSelectedRoom = useMemo(() => {
     try { await updateRoomProperties(roomId, newProps); } catch (e) { Alert.alert("Error", `No se pudo actualizar: ${e.message}`); }
   }, [updateRoomProperties]);
 
-  const handleDeleteSelectedRoom = useCallback(async () => { 
+  const handleDeleteSelectedRoom = useCallback(async () => {
     if (!selectedRoom) return;
     Alert.alert( "Eliminar Habitación", `¿Estás seguro de que quieres eliminar "${selectedRoom.name}"?`, [ { text: "Cancelar", style: "cancel" }, { text: "Eliminar", style: "destructive", onPress: async () => { try { await deleteRoom(selectedRoom.id); setSelectedRoom(null); Alert.alert("Éxito", "Habitación eliminada."); } catch (error) { Alert.alert("Error", `No se pudo eliminar: ${error.message}`); } }, }, ] );
   }, [selectedRoom, deleteRoom, setSelectedRoom]);
 
-  const renderListFooter = useCallback(() => { 
+  const renderListFooter = useCallback(() => {
     if (!selectedRoom) return null;
     return ( <View style={styles.deleteRoomButtonContainer}><TouchableOpacity style={styles.deleteRoomButton} onPress={handleDeleteSelectedRoom}><Ionicons name="trash-outline" size={20} color={theme.textLight || '#fff'} /><Text style={styles.deleteRoomButtonText}>Eliminar Habitación</Text></TouchableOpacity></View> );
   }, [selectedRoom, handleDeleteSelectedRoom, styles, theme]);
@@ -504,6 +505,12 @@ return (
             <Text style={styles.emptyText}>
               Selecciona una habitación para ver sus tareas.
             </Text>
+            {/* --- INICIO DE LA MODIFICACIÓN --- */}
+            <Image
+              source={require('../../assets/raton_limpiando.png')} // Asegúrate que la ruta y el nombre sean correctos
+              style={styles.emptyStateImage}
+            />
+            {/* --- FIN DE LA MODIFICACIÓN --- */}
           </View>
         )
       ) : null
@@ -518,4 +525,3 @@ return (
 );
 
 }
-
