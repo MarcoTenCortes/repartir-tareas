@@ -7,7 +7,7 @@ import {
   StyleSheet,
   Alert,
   Text,
-  // Image, // Si no se usa, se puede quitar
+  Image, // <--- DESCOMENTA O AÑADE ESTA LÍNEA
   KeyboardAvoidingView,
   Platform,
   ScrollView
@@ -27,7 +27,6 @@ export default function LoginScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
 
   if (user) {
-    // ... (código para usuario logueado sin cambios)
     return (
       <View style={styles.container}>
         <Animatable.View animation="fadeInDown" duration={800} style={styles.loggedInContainer}>
@@ -43,7 +42,6 @@ export default function LoginScreen({ navigation }) {
   }
 
   const handleLogin = async () => {
-    // ... (lógica de handleLogin sin cambios)
     if (!email.trim() || !password) {
       Alert.alert('Campos incompletos', 'Por favor, introduce tu email y contraseña.');
       return;
@@ -91,31 +89,41 @@ export default function LoginScreen({ navigation }) {
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
-              onSubmitEditing={handleLogin} // Opcional: para loguear con Enter
+              onSubmitEditing={handleLogin}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
               <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={24} color={theme.placeholder} />
             </TouchableOpacity>
           </View>
 
-          {/* Mantener Animatable.View para el botón de login si se desea */}
           <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
             <Text style={styles.buttonTextPrimary}>Entrar</Text>
           </TouchableOpacity>
          
-          {/* --- AÑADIR ESTE BLOQUE --- */}
           <TouchableOpacity
             style={styles.forgotPasswordButton}
             onPress={() => navigation.navigate('ForgotPassword')}
           >
             <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
           </TouchableOpacity>
-          {/* --- FIN DEL BLOQUE AÑADIDO --- */}
 
           <TouchableOpacity style={styles.buttonSecondary} onPress={() => navigation.navigate('Register')}>
             <Text style={styles.buttonTextSecondary}>¿No tienes cuenta? <Text style={styles.linkText}>Regístrate</Text></Text>
           </TouchableOpacity>
         </Animatable.View>
+
+        {/* --- AÑADIR ESTE BLOQUE PARA LA IMAGEN --- */}
+        <Animatable.View animation="fadeInUp" duration={600} delay={400} style={styles.bottomImageContainer}>
+          <Image
+            // Asegúrate de que la ruta a tu imagen sea correcta.
+            // Si LoginScreen.js está en src/screens/ y tu imagen en src/assets/images/
+            source={require('../../assets/login_image.png')}
+            style={styles.bottomImage}
+            resizeMode="contain" // 'cover', 'stretch', 'repeat', 'center'
+          />
+        </Animatable.View>
+        {/* --- FIN DEL BLOQUE AÑADIDO PARA LA IMAGEN --- */}
+
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -132,7 +140,7 @@ const getStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 30,
+    paddingVertical: 30, // Asegúrate de que haya suficiente padding vertical
   },
   logoContainer: {
     alignItems: 'center',
@@ -154,6 +162,7 @@ const getStyles = (theme) => StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 15,
     elevation: 8,
+    // marginBottom: 20, // Puedes añadir un margen inferior al formulario si la imagen está muy pegada
   },
   title: {
     fontSize: 24,
@@ -189,7 +198,7 @@ const getStyles = (theme) => StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 15, // Ajustar margen si es necesario
+    marginBottom: 15,
     shadowColor: theme.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -202,7 +211,7 @@ const getStyles = (theme) => StyleSheet.create({
     fontWeight: 'bold',
   },
   buttonSecondary: {
-    paddingVertical: 10, // Mantener padding consistente
+    paddingVertical: 10,
     alignItems: 'center',
   },
   buttonTextSecondary: {
@@ -218,7 +227,7 @@ const getStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: theme.background, // Asegurar que el fondo sea consistente
+    backgroundColor: theme.background,
   },
   info: {
     fontSize: 16,
@@ -226,20 +235,29 @@ const getStyles = (theme) => StyleSheet.create({
     textAlign: 'center',
     color: theme.textSecondary,
   },
-  container: { // Estilo para el contenedor principal de la pantalla logueada
+  container: {
     flex: 1,
-    backgroundColor: theme.background, // Para consistencia con el KeyboardAvoidingView
+    backgroundColor: theme.background,
   },
-  // --- AÑADIR ESTOS ESTILOS ---
   forgotPasswordButton: {
     alignItems: 'center',
     paddingVertical: 8,
-    marginBottom: 8, // Espacio antes del botón de registrarse
+    marginBottom: 8,
   },
   forgotPasswordText: {
-    color: theme.accent, // Usar el color de acento para el enlace
+    color: theme.accent,
     fontSize: 14,
-    // textDecorationLine: 'underline', // Opcional si quieres subrayado
   },
-  // --- FIN DE ESTILOS AÑADIDOS ---
+  // --- AÑADIR ESTOS ESTILOS PARA LA IMAGEN ---
+  bottomImageContainer: {
+    marginTop: 30, // Espacio entre el formulario y la imagen
+    width: '90%', // O el ancho que prefieras
+    alignItems: 'center', // Para centrar la imagen si su 'width' es menor al del contenedor
+  },
+  bottomImage: {
+    width: '100%', // La imagen ocupará el ancho de su contenedor (bottomImageContainer)
+    height: 150, // Define una altura o ajusta según la relación de aspecto de tu imagen
+    borderRadius: 8, // Opcional: si quieres bordes redondeados
+  },
+  // --- FIN DE ESTILOS AÑADIDOS PARA LA IMAGEN ---
 });
