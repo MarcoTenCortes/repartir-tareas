@@ -1,4 +1,4 @@
-// src/components/GroupSelector.js
+// FILE: src/components/GroupSelector.js
 import React, { useContext, useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Dropdown } from 'react-native-element-dropdown';
@@ -42,7 +42,7 @@ export default function GroupSelector() {
         style={[styles.dropdown, { borderColor: isFocus ? theme.primary : theme.border, backgroundColor: theme.cardBackground }, isFocus && { shadowColor: theme.primary, shadowOpacity: 0.3, shadowRadius: 5, elevation: 3 }]}
         placeholderStyle={[styles.placeholderStyle, { color: theme.textSecondary }]}
         selectedTextStyle={[styles.selectedTextStyle, { color: theme.textPrimary }]}
-        inputSearchStyle={[styles.inputSearchStyle, { color: theme.textPrimary }]}
+        inputSearchStyle={[styles.inputSearchStyle, { color: theme.textPrimary }]} // Asegurar color de texto en búsqueda
         iconStyle={styles.iconStyle}
         data={dataForDropdown}
         search
@@ -50,7 +50,7 @@ export default function GroupSelector() {
         labelField="label"
         valueField="value"
         placeholder={!isFocus && currentGroup ? currentGroup.name : 'Selecciona grupo'}
-        searchPlaceholder="Buscar grupo..."
+        searchPlaceholder="Buscar..." // Más corto
         value={dropdownValue}
         onFocus={() => setIsFocus(true)}
         onBlur={() => setIsFocus(false)}
@@ -75,9 +75,10 @@ export default function GroupSelector() {
             name={isFocus ? "chevron-up-outline" : "chevron-down-outline"}
             size={22}
             color={theme.textSecondary}
-            style={{ marginLeft: 5 }}
+            style={{ marginLeft: 5 }} // Ajustar si es necesario
           />
         )}
+        // containerStyle={{ width: '100%' }} // Asegura que use el ancho del wrapper
       />
     </View>
   );
@@ -85,26 +86,27 @@ export default function GroupSelector() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1, // Quitar flex:1 para que el wrapper en AppHeader controle el tamaño
     paddingVertical: 4,
-    minWidth: 150,
-    marginRight: 10,
+    // minWidth: 150, // Quitar minWidth si el wrapper en AppHeader lo controla
+    // marginRight: 10, // Quitar margen si se maneja en AppHeader
     justifyContent: 'center',
+    width: '100%', // Para que ocupe el ancho de su wrapper en AppHeader
   },
   dropdown: {
-    height: 40,
+    height: 40, // O 42 para un poco más de padding vertical
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10, // Reducir un poco si el texto no cabe
   },
   icon: {
-    marginRight: 10,
+    marginRight: 8, // Reducir un poco si es necesario
   },
   placeholderStyle: {
-    fontSize: 16,
+    fontSize: 15, // Un poco más pequeño si es necesario
   },
   selectedTextStyle: {
-    fontSize: 16,
+    fontSize: 15, // Un poco más pequeño si es necesario
     fontWeight: '600',
     marginLeft: 5,
   },
@@ -114,10 +116,11 @@ const styles = StyleSheet.create({
   },
   inputSearchStyle: {
     height: 40,
-    fontSize: 16,
+    fontSize: 15, // Un poco más pequeño
     borderRadius: 8,
   },
   noGroupsText: {
-    fontSize: 16,
+    fontSize: 15, // Un poco más pequeño
+    paddingLeft: 5, // Pequeño padding para alinear con el dropdown si estuviera presente
   },
 });
