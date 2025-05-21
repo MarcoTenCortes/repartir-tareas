@@ -14,7 +14,7 @@ import {
   serverTimestamp,
   query,
   where,
-  orderBy,
+  orderBy, // Asegúrate que orderBy está importado
   getDoc,
   getDocs,
   writeBatch,
@@ -67,37 +67,34 @@ export function GroupProvider({ children }) {
     const unsubRooms = onSnapshot(roomsQueryRef, snap => {
       setRooms(snap.docs.map(d => {
         const data = d.data();
-        const position = data.position || {}; // Ensure position object exists
+        const position = data.position || {}; 
 
-        // Sanitize room properties to prevent "undefined" strings or wrong types
         return {
           id: d.id,
-          ...data, // Spread existing data first
-          name: data.name || "Habitación sin nombre", // Default name if missing
-          width: Number(data.width) || 100,          // Ensure width is a number, default to 100
-          height: Number(data.height) || 60,         // Ensure height is a number, default to 60
-          rotation: Number(data.rotation) || 0,      // Ensure rotation is a number, default to 0
-          shape: data.shape || 'rectangle',          // Ensure shape is a string, default to 'rectangle'
+          ...data, 
+          name: data.name || "Habitación sin nombre", 
+          width: Number(data.width) || 100,          
+          height: Number(data.height) || 60,         
+          rotation: Number(data.rotation) || 0,      
+          shape: data.shape || 'rectangle',          
           position: {
-            x: Number(position.x) || 0,              // Ensure x is a number, default to 0
-            y: Number(position.y) || 0,              // Ensure y is a number, default to 0
+            x: Number(position.x) || 0,              
+            y: Number(position.y) || 0,              
           },
-          // Ensure createdAt is a Timestamp or null, handle potential string dates if necessary
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt : (data.createdAt ? Timestamp.fromDate(new Date(data.createdAt)) : serverTimestamp()),
-          // createdBy should ideally always be present
         };
       }));
     });
     
     const shopCol = collection(db, 'groups', currentGroup.id, 'shopping');
-    const unsubShop = onSnapshot(shopCol, snap =>
-      setShoppingList(snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
-        if (a.bought === b.bought) {
-          return (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0);
-        }
-        return a.bought ? 1 : -1;
-      }))
-    );
+    // MODIFICADO: Ordenar por el campo 'order' ascendentemente.
+    // Si 'order' no existe en documentos antiguos, podrían aparecer primero o último según Firestore.
+    // Se recomienda una migración de datos para añadir 'order' a items existentes si es necesario.
+    const shopQueryRef = query(shopCol, orderBy('order', 'asc'));
+    const unsubShop = onSnapshot(shopQueryRef, snap => {
+      setShoppingList(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      // Ya no se necesita el sort manual aquí si Firestore ordena por 'order'
+    });
     
     const remCol = collection(db, 'groups', currentGroup.id, 'reminders');
     const unsubRem = onSnapshot(remCol, snap => {
@@ -221,7 +218,7 @@ export function GroupProvider({ children }) {
     const roomsColRef = collection(db, 'groups', currentGroup.id, 'rooms');
     await addDoc(roomsColRef, {
       name: roomName.trim(),
-      position: { // Ensure position values are numbers
+      position: { 
         x: Number(initialPosition.x) || 0,
         y: Number(initialPosition.y) || 0,
       },
@@ -239,7 +236,7 @@ export function GroupProvider({ children }) {
     if (!roomId || !newPosition) throw new Error("Información incompleta para actualizar la posición.");
     const roomDocRef = doc(db, 'groups', currentGroup.id, 'rooms', roomId);
     await updateDoc(roomDocRef, {
-      position: { // Ensure position values are numbers
+      position: { 
         x: Number(newPosition.x) || 0,
         y: Number(newPosition.y) || 0,
       }
@@ -250,7 +247,6 @@ export function GroupProvider({ children }) {
     if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
     if (!roomId || !properties) throw new Error("Información incompleta para actualizar propiedades.");
     
-    // Sanitize properties before updating
     const sanitizedProperties = { ...properties };
     if (properties.hasOwnProperty('width')) {
       sanitizedProperties.width = Number(properties.width) || 100;
@@ -288,7 +284,6 @@ export function GroupProvider({ children }) {
     await batch.commit();
   };
 
-  // ... (resto de funciones: approveJoinRequest, addPayment, etc. sin cambios, pero asegúrate de que también manejan los datos correctamente)
   const approveJoinRequest = async (groupId, requestingUserId) => {
     if (!user || !currentGroup || currentGroup.id !== groupId || currentGroup.owner !== user.uid) {
         throw new Error("Operación no permitida o grupo incorrecto.");
@@ -379,7 +374,7 @@ export function GroupProvider({ children }) {
       const paymentsColRef = collection(db, 'groups', currentGroup.id, 'payments');
       await addDoc(paymentsColRef, {
         description: description.trim(),
-        amount: amount ? parseFloat(amount) : null, // Ensure amount is a number or null
+        amount: amount ? parseFloat(amount) : null, 
         createdAt: serverTimestamp(),
         createdByUid: user.uid,
         payers: initialPayers,
@@ -477,7 +472,8 @@ export function GroupProvider({ children }) {
       await addDoc(shopColRef, {
         text: itemText.trim(),
         bought: false,
-        createdAt: Timestamp.now(),
+        createdAt: Timestamp.now(), // Mantenido para auditoría si se desea
+        order: Date.now(), // NUEVO: Usar timestamp actual para el orden inicial
         addedBy: user?.uid || 'unknown',
         addedByName: user?.name || user?.email || 'Unknown User'
       });
@@ -509,6 +505,29 @@ export function GroupProvider({ children }) {
     }
   };
 
+  // NUEVA FUNCIÓN: Para actualizar el orden de los artículos de la compra
+  const updateShoppingListOrder = async (reorderedItems) => {
+    if (!currentGroup) throw new Error("No hay un grupo seleccionado.");
+    if (!reorderedItems || reorderedItems.length === 0) return; // No hay nada que actualizar
+
+    const batch = writeBatch(db);
+    reorderedItems.forEach((item, index) => {
+      // Asegurarse de que el item tiene un ID; podría no tenerlo si es un item nuevo aún no en Firestore
+      // DraggableFlatList devuelve los items con sus IDs si vienen de la data original.
+      if (item.id) { 
+        const itemDocRef = doc(db, 'groups', currentGroup.id, 'shopping', item.id);
+        batch.update(itemDocRef, { order: index }); // Usar el índice del array como el nuevo valor de 'order'
+      }
+    });
+    
+    try {
+      await batch.commit();
+    } catch (error) {
+      console.error("Error actualizando el orden de la lista de la compra:", error);
+      throw error; // Propagar el error para que la UI pueda manejarlo
+    }
+  };
+
 
   return (
     <GroupContext.Provider
@@ -521,7 +540,7 @@ export function GroupProvider({ children }) {
         reminders,
         joinRequests,
         payments,
-        rooms, // This will now provide sanitized room data
+        rooms, 
         createTask,
         assignTaskToUser,
         unassignTask,
@@ -534,6 +553,7 @@ export function GroupProvider({ children }) {
         addShoppingItem,
         toggleBought,
         deleteShoppingItem,
+        updateShoppingListOrder, // Exportar la nueva función
         approveJoinRequest,
         rejectJoinRequest,
         addPayment,
@@ -545,4 +565,3 @@ export function GroupProvider({ children }) {
     </GroupContext.Provider>
   );
 }
-
