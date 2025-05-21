@@ -7,28 +7,27 @@ import {
   StyleSheet,
   Alert,
   Text,
-  Image, // Para el logo
+  // Image, // Si no se usa, se puede quitar
   KeyboardAvoidingView,
   Platform,
   ScrollView
 } from 'react-native';
-import * as Animatable from 'react-native-animatable'; // Para animaciones
+import * as Animatable from 'react-native-animatable';
 import { UserContext } from '../context/UserContext';
-import { useTheme } from '../context/ThemeContext'; // Hook para usar el tema
-import { Ionicons } from '@expo/vector-icons'; // Para iconos en inputs
+import { useTheme } from '../context/ThemeContext';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function LoginScreen({ navigation }) {
   const { user, login, logout } = useContext(UserContext);
-  const { theme } = useTheme(); // Obtener el tema actual
+  const { theme } = useTheme();
+  const styles = getStyles(theme);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Estilos dinámicos basados en el tema
-  const styles = getStyles(theme);
-
   if (user) {
+    // ... (código para usuario logueado sin cambios)
     return (
       <View style={styles.container}>
         <Animatable.View animation="fadeInDown" duration={800} style={styles.loggedInContainer}>
@@ -44,13 +43,13 @@ export default function LoginScreen({ navigation }) {
   }
 
   const handleLogin = async () => {
+    // ... (lógica de handleLogin sin cambios)
     if (!email.trim() || !password) {
       Alert.alert('Campos incompletos', 'Por favor, introduce tu email y contraseña.');
       return;
     }
     try {
       await login(email.trim(), password);
-      // La navegación se maneja automáticamente por el cambio de estado de `user`
     } catch (err) {
       Alert.alert('Error de inicio de sesión', err.message || 'No se pudo iniciar sesión. Verifica tus credenciales.');
     }
@@ -63,7 +62,6 @@ export default function LoginScreen({ navigation }) {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Animatable.View animation="fadeInDown" duration={600} style={styles.logoContainer}>
-          {/* Reemplaza con tu logo, puedes usar un <Image source={require('../assets/logo.png')} /> */}
           <Ionicons name="people-circle-outline" size={100} color={theme.primary} />
           <Text style={styles.appName}>CompartePiso App</Text>
         </Animatable.View>
@@ -93,18 +91,26 @@ export default function LoginScreen({ navigation }) {
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
+              onSubmitEditing={handleLogin} // Opcional: para loguear con Enter
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
               <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={24} color={theme.placeholder} />
             </TouchableOpacity>
           </View>
 
-          <Animatable.View animation="pulse" iterationCount="infinite" delay={1000} duration={1500}>
-             <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
-               <Text style={styles.buttonTextPrimary}>Entrar</Text>
-             </TouchableOpacity>
-          </Animatable.View>
+          {/* Mantener Animatable.View para el botón de login si se desea */}
+          <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
+            <Text style={styles.buttonTextPrimary}>Entrar</Text>
+          </TouchableOpacity>
          
+          {/* --- AÑADIR ESTE BLOQUE --- */}
+          <TouchableOpacity
+            style={styles.forgotPasswordButton}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            <Text style={styles.forgotPasswordText}>¿Olvidaste tu contraseña?</Text>
+          </TouchableOpacity>
+          {/* --- FIN DEL BLOQUE AÑADIDO --- */}
 
           <TouchableOpacity style={styles.buttonSecondary} onPress={() => navigation.navigate('Register')}>
             <Text style={styles.buttonTextSecondary}>¿No tienes cuenta? <Text style={styles.linkText}>Regístrate</Text></Text>
@@ -115,8 +121,8 @@ export default function LoginScreen({ navigation }) {
   );
 }
 
-// Función para generar estilos dependientes del tema
 const getStyles = (theme) => StyleSheet.create({
+  // ... (otros estilos sin cambios)
   keyboardAvoidingContainer: {
     flex: 1,
     backgroundColor: theme.background,
@@ -143,7 +149,7 @@ const getStyles = (theme) => StyleSheet.create({
     backgroundColor: theme.cardBackground,
     borderRadius: 16,
     padding: 25,
-    shadowColor: theme.shadowColor,
+    shadowColor: theme.shadowColor || '#000',
     shadowOffset: { width: 0, height: 5 },
     shadowOpacity: 0.1,
     shadowRadius: 15,
@@ -183,7 +189,7 @@ const getStyles = (theme) => StyleSheet.create({
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 15, // Ajustar margen si es necesario
     shadowColor: theme.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -196,7 +202,7 @@ const getStyles = (theme) => StyleSheet.create({
     fontWeight: 'bold',
   },
   buttonSecondary: {
-    paddingVertical: 10,
+    paddingVertical: 10, // Mantener padding consistente
     alignItems: 'center',
   },
   buttonTextSecondary: {
@@ -212,11 +218,28 @@ const getStyles = (theme) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: theme.background, // Asegurar que el fondo sea consistente
   },
   info: {
     fontSize: 16,
     marginBottom: 20,
     textAlign: 'center',
     color: theme.textSecondary,
-  }
+  },
+  container: { // Estilo para el contenedor principal de la pantalla logueada
+    flex: 1,
+    backgroundColor: theme.background, // Para consistencia con el KeyboardAvoidingView
+  },
+  // --- AÑADIR ESTOS ESTILOS ---
+  forgotPasswordButton: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    marginBottom: 8, // Espacio antes del botón de registrarse
+  },
+  forgotPasswordText: {
+    color: theme.accent, // Usar el color de acento para el enlace
+    fontSize: 14,
+    // textDecorationLine: 'underline', // Opcional si quieres subrayado
+  },
+  // --- FIN DE ESTILOS AÑADIDOS ---
 });
