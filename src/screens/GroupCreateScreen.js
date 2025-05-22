@@ -1,5 +1,6 @@
+// FILE: src/screens/GroupCreateScreen.js
 import React, { useState, useContext } from 'react';
-import { View, TextInput, Button, StyleSheet, Alert } from 'react-native';
+import { View, TextInput, Button, StyleSheet, Alert, Image } from 'react-native'; // Importar Image
 import { UserContext } from '../context/UserContext';
 
 export default function GroupCreateScreen({ navigation }) {
@@ -30,11 +31,33 @@ export default function GroupCreateScreen({ navigation }) {
         onChangeText={setName}
       />
       <Button title="Crear grupo" onPress={handleCreate} />
+      <Image 
+        source={require('../../assets/rey.png')} 
+        style={styles.bottomImage} 
+        resizeMode="contain" // Ajusta según necesites: cover, stretch, etc.
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, marginTop: 70 },
-  input: { borderWidth: 1, borderColor: '#ccc', padding: 8, marginBottom: 8 }
+  container: { 
+    flex: 1, 
+    padding: 16, 
+    marginTop: 70, 
+    justifyContent: 'flex-start', // Alinea el contenido arriba
+  },
+  input: { 
+    borderWidth: 1, 
+    borderColor: '#ccc', 
+    padding: 8, 
+    marginBottom: 8 
+  },
+  bottomImage: {
+    width: '80%', // O un tamaño fijo, ej: 200
+    height: '90%',  // O un tamaño fijo, ej: 150
+    alignSelf: 'center',
+    marginTop: 'auto', // Empuja la imagen hacia abajo
+    marginBottom: 40, // Espacio opcional desde el borde inferior
+  }
 });
