@@ -1,6 +1,6 @@
 // FILE: src/screens/HomeScreen.js
 import React, { useContext, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image, Dimensions, Alert, ImageBackground } from 'react-native'; // Añadido ImageBackground
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image, Dimensions, Alert, ImageBackground, Modal, TextInput } from 'react-native'; // Añadido ImageBackground
 import { Ionicons } from '@expo/vector-icons';
 import * as Animatable from 'react-native-animatable';
 import Swiper from 'react-native-swiper';
@@ -10,19 +10,61 @@ import { useTheme } from '../context/ThemeContext';
 import { useNavigation } from '@react-navigation/native';
 
 const { width: screenWidth } = Dimensions.get('window');
+// paste-2.txt: Dentro de export default function HomeScreen() { ... }
+
 
 export default function HomeScreen() {
   const { user } = useContext(UserContext);
+  const [isAddPaymentModalVisible, setIsAddPaymentModalVisible] = useState(false);
+const [paymentDescription, setPaymentDescription] = useState('');
+const [paymentAmount, setPaymentAmount] = useState('');
+const [loadingAction, setLoadingAction] = useState(false); // Para el estado de carga del modal
   const {
     currentGroup,
     tasks,
     payments,
     deletePayment,
-    toggleMemberPaymentStatus
+    toggleMemberPaymentStatus,
+    addPayment
   } = useContext(GroupContext);
   const { theme } = useTheme();
   const navigation = useNavigation();
   const styles = getStyles(theme);
+// paste-2.txt: Añade estas funciones
+const handleGenericAction = async (action, successMessage, errorMessagePrefix) => {
+  setLoadingAction(true);
+  try {
+    await action();
+    Alert.alert('Éxito', successMessage);
+  } catch (error) {
+    Alert.alert('Error', `${errorMessagePrefix}: ${error.message}`);
+  } finally {
+    setLoadingAction(false);
+  }
+};
+
+const handleModalAddPayment = () => {
+  if (!currentGroup || !paymentDescription.trim()) {
+    Alert.alert("Error", "Descripción y grupo son necesarios.");
+    return;
+  }
+  handleGenericAction(
+    () => addPayment(paymentDescription, paymentAmount || null), // Asegúrate que addPayment acepte estos params
+    "Pago añadido correctamente.",
+    'No se pudo añadir el pago'
+  ).then(() => {
+    // El .then(() => {}) se ejecutará independientemente del éxito/error de handleGenericAction
+    // Solo limpiar y cerrar si no está cargando (implica que la acción ya finalizó, sea éxito o error)
+    // Esta lógica es un poco extraña, normalmente el finally de handleGenericAction es suficiente.
+    // Considera si la limpieza debe ocurrir solo en caso de éxito dentro del try de handleGenericAction.
+    // Por ahora, mantenemos la lógica original de paste.txt:
+    if(!loadingAction) { // Esta condición podría necesitar revisión, ya que setLoadingAction(false) se llama en el finally
+        setPaymentDescription('');
+        setPaymentAmount('');
+        setIsAddPaymentModalVisible(false);
+    }
+  });
+};
 
   const navigateToScreen = (screenName, params = {}) => {
     navigation.navigate(screenName, params);
@@ -88,10 +130,11 @@ export default function HomeScreen() {
       <View style={styles.paymentItemHeader}>
         <Text style={styles.paymentDescription} numberOfLines={1} ellipsizeMode="tail">{payment.description}</Text>
         <View style={styles.paymentHeaderActions}>
-          <TouchableOpacity 
+            <TouchableOpacity
             style={styles.paymentActionIcon}
-            onPress={() => navigation.navigate('ShoppingScreen', { screen: 'PaymentsTab', params: { action: 'addPayment', fromHome: true }})}
-          >
+            onPress={() => setIsAddPaymentModalVisible(true)} // <--- CAMBIO AQUÍ
+            disabled={loadingAction} // <--- AÑADIR SI ES RELEVANTE (igual que en paste.txt)
+            >
             <Ionicons name="add-circle-outline" size={28} color={theme.primary} />
           </TouchableOpacity>
           {/* Icono para Eliminar pago actual (solo si es propietario) */}
@@ -205,12 +248,13 @@ export default function HomeScreen() {
               <Animatable.View animation="fadeInUp" delay={350} style={styles.centeredMessageContainerNoItems}>
                 <Ionicons name="wallet-outline" size={50} color={theme.textSecondary} style={{marginBottom:10}}/>
                 <Text style={styles.infoText}>No hay pagos registrados.</Text>
-                <TouchableOpacity 
-                  style={styles.addNewPaymentButtonCentered} 
-                  onPress={() => navigation.navigate('ShoppingScreen', { screen: 'PaymentsTab', params: { action: 'addPayment', fromHome: true }})}
+                <TouchableOpacity
+                style={styles.addNewPaymentButtonCentered}
+                onPress={() => setIsAddPaymentModalVisible(true)} // <--- CAMBIO AQUÍ
+                disabled={loadingAction} // <--- AÑADIR SI ES RELEVANTE (igual que en paste.txt)
                 >
-                  <Ionicons name="add-circle-outline" size={20} color={theme.textLight} style={{marginRight: 8}} />
-                  <Text style={styles.addNewPaymentButtonText}>Añadir Primer Pago</Text>
+                <Ionicons name="add-circle-outline" size={20} color={theme.textLight} style={{marginRight: 8}} />
+                <Text style={styles.addNewPaymentButtonText}>Añadir Primer Pago</Text>
                 </TouchableOpacity>
               </Animatable.View>
             ) : (
@@ -241,7 +285,51 @@ export default function HomeScreen() {
             )}
           </>
         )}
-        {/* Eliminada la Image de fondo/pie de página original, ya que ahora está en ImageBackground */}
+       // paste-2.txt: Pega esto dentro del return(...) de HomeScreen
+<Modal
+  animationType="slide"
+  transparent={true}
+  visible={isAddPaymentModalVisible}
+  onRequestClose={() => setIsAddPaymentModalVisible(false)}
+>
+  <View style={styles.modalCenteredView}>
+    <Animatable.View animation="zoomIn" duration={300} style={styles.modalView}>
+      <Text style={styles.modalTitle}>Añadir Nuevo Pago</Text>
+      <TextInput
+        style={styles.modalInput}
+        placeholder="Descripción del pago"
+        placeholderTextColor={theme.placeholder}
+        value={paymentDescription}
+        onChangeText={setPaymentDescription}
+      />
+      <TextInput
+        style={styles.modalInput}
+        placeholder="Monto total (€) (opcional)"
+        placeholderTextColor={theme.placeholder}
+        value={paymentAmount}
+        onChangeText={setPaymentAmount}
+        keyboardType="numeric"
+      />
+      <View style={styles.modalButtonContainer}>
+        <TouchableOpacity
+          style={[styles.modalButton, {backgroundColor: theme.error}]}
+          onPress={() => setIsAddPaymentModalVisible(false)}
+          disabled={loadingAction}
+        >
+          <Text style={styles.modalButtonText}>Cancelar</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, {backgroundColor: theme.primary}]}
+          onPress={handleModalAddPayment}
+          disabled={loadingAction}
+        >
+          {loadingAction ? <ActivityIndicator color={theme.textLight} /> : <Text style={styles.modalButtonText}>Añadir</Text>}
+        </TouchableOpacity>
+      </View>
+    </Animatable.View>
+  </View>
+</Modal>
+
       </ScrollView>
     </View>
   );
@@ -415,6 +503,64 @@ const getStyles = (theme) => StyleSheet.create({
     marginBottom: 8,
     paddingLeft: 5,
   },
+  modalCenteredView: {
+  flex: 1,
+  justifyContent: "center",
+  alignItems: "center",
+  backgroundColor: 'rgba(0,0,0,0.6)'
+},
+modalView: {
+  width: '90%',
+  margin: 20,
+  backgroundColor: theme.cardBackground,
+  borderRadius: 20,
+  padding: 25,
+  alignItems: "center",
+  shadowColor: theme.shadowColor,
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.25,
+  shadowRadius: 6,
+  elevation: 10,
+},
+modalTitle: {
+  marginBottom: 20,
+  textAlign: "center",
+  fontSize: 20,
+  fontWeight: 'bold',
+  color: theme.textPrimary,
+},
+modalInput: {
+  width: '100%',
+  height: 50,
+  backgroundColor: theme.inputBackground,
+  borderWidth: 1,
+  borderColor: theme.border,
+  paddingHorizontal: 15,
+  marginBottom: 15,
+  borderRadius: 10,
+  fontSize: 16,
+  color: theme.textPrimary,
+},
+modalButtonContainer: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  width: '100%',
+  marginTop: 20,
+},
+modalButton: {
+  flex: 1,
+  paddingVertical: 12,
+  borderRadius: 10,
+  alignItems: 'center',
+  marginHorizontal: 5,
+  minHeight: 48,
+  justifyContent: 'center',
+},
+modalButtonText: {
+  color: theme.textLight,
+  fontSize: 16,
+  fontWeight: 'bold',
+},
   addNewPaymentButtonCentered: {
     flexDirection: 'row',
     backgroundColor: theme.primary,
