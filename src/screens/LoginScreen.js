@@ -61,7 +61,7 @@ export default function LoginScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Animatable.View animation="fadeInDown" duration={600} style={styles.logoContainer}>
           <Ionicons name="people-circle-outline" size={100} color={theme.primary} />
-          <Text style={styles.appName}>CompartePiso App</Text>
+          <Text style={styles.appName}>PisoDrama</Text>
         </Animatable.View>
 
         <Animatable.View animation="fadeInUp" duration={600} delay={200} style={styles.formContainer}>

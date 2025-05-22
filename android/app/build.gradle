@@ -87,7 +87,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.anonymous.compartirPisoapp'
+    namespace "com.anonymous.compartirPisoapp"
     defaultConfig {
         applicationId 'com.anonymous.compartirPisoapp'
         minSdkVersion rootProject.ext.minSdkVersion
