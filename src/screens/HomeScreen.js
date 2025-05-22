@@ -1,622 +1,567 @@
- import React, { useContext, useState, useEffect } from 'react';
- import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  Alert,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Dimensions,
-  Modal,
-  ActivityIndicator
- } from 'react-native';
- import * as Animatable from 'react-native-animatable';
- import { Ionicons } from '@expo/vector-icons';
- import Swiper from 'react-native-swiper';
- import { UserContext } from '../context/UserContext';
- import { GroupContext } from '../context/GroupContext';
- import { useTheme } from '../context/ThemeContext';
- import { useNavigation } from '@react-navigation/native';
+// FILE: src/screens/HomeScreen.js
+import React, { useContext, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Image, Dimensions, Alert, ImageBackground } from 'react-native'; // Añadido ImageBackground
+import { Ionicons } from '@expo/vector-icons';
+import * as Animatable from 'react-native-animatable';
+import Swiper from 'react-native-swiper';
+import { UserContext } from '../context/UserContext';
+import { GroupContext } from '../context/GroupContext';
+import { useTheme } from '../context/ThemeContext';
+import { useNavigation } from '@react-navigation/native';
 
- const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth } = Dimensions.get('window');
 
- export default function HomeScreen() {
-  const { user, leaveGroup, groups: userAppGroups } = useContext(UserContext);
+export default function HomeScreen() {
+  const { user } = useContext(UserContext);
   const {
-  currentGroup,
-  joinRequests,
-  approveJoinRequest,
-  rejectJoinRequest,
-  payments,
-  addPayment,
-  toggleMemberPaymentStatus,
-  deletePayment
+    currentGroup,
+    tasks,
+    payments,
+    deletePayment,
+    toggleMemberPaymentStatus
   } = useContext(GroupContext);
-  const navigation = useNavigation();
   const { theme } = useTheme();
+  const navigation = useNavigation();
   const styles = getStyles(theme);
 
-  const [isAddPaymentModalVisible, setIsAddPaymentModalVisible] = useState(false);
-  const [paymentDescription, setPaymentDescription] = useState('');
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [currentUserTotalUnpaid, setCurrentUserTotalUnpaid] = useState(0);
-  const [loadingAction, setLoadingAction] = useState(false);
-
-  useEffect(() => {
-  if (user && currentGroup && payments.length > 0) {
-  let totalUnpaid = 0;
-  payments.forEach(payment => {
-  const payerEntry = payment.payers && payment.payers[user.uid];
-  if (payerEntry && !payerEntry.paid && payment.amount) {
-  const numberOfPayers = Object.keys(payment.payers).length;
-  if (numberOfPayers > 0) {
-  totalUnpaid += parseFloat(payment.amount) / numberOfPayers;
-  }
-  }
-  });
-  setCurrentUserTotalUnpaid(totalUnpaid);
-  } else {
-  setCurrentUserTotalUnpaid(0);
-  }
-  }, [payments, user, currentGroup]);
-
-  const handleGenericAction = async (action, successMessage, errorMessagePrefix) => {
-  setLoadingAction(true);
-  try {
-  await action();
-  Alert.alert('Éxito', successMessage);
-  } catch (error) {
-  Alert.alert('Error', `${errorMessagePrefix}: ${error.message}`);
-  } finally {
-  setLoadingAction(false);
-  }
+  const navigateToScreen = (screenName, params = {}) => {
+    navigation.navigate(screenName, params);
   };
 
-  const handleApprove = (groupId, requestingUserId, userName) => {
-  handleGenericAction(
-  () => approveJoinRequest(groupId, requestingUserId),
-  `${userName} ha sido añadido al grupo.`,
-  'No se pudo aprobar la solicitud'
+  const getTotalPendingTasksForGroup = () => {
+    return tasks.filter(task => !task.assignedTo).length;
+  };
+
+  const getTotalAssignedToUserInGroup = () => {
+    return tasks.filter(task => task.assignedTo === user?.uid).length;
+  };
+
+  const handleDeletePayment = async (paymentId, paymentDescription) => {
+    if (!currentGroup || currentGroup.owner !== user?.uid) {
+      Alert.alert("Error", "Solo el propietario del grupo puede eliminar pagos.");
+      return;
+    }
+    Alert.alert(
+      "Confirmar Eliminación",
+      `¿Estás seguro de que quieres eliminar el pago "${paymentDescription}"?`,
+      [
+        { text: "Cancelar", style: "cancel" },
+        {
+          text: "Eliminar",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deletePayment(paymentId);
+              Alert.alert("Éxito", "Pago eliminado correctamente.");
+            } catch (error) {
+              Alert.alert("Error", `No se pudo eliminar el pago: ${error.message}`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleTogglePayerStatus = async (paymentId, payerId) => {
+    if (payerId !== user?.uid) {
+      Alert.alert("Acción no permitida", "Solo puedes cambiar tu propio estado de pago.");
+      return;
+    }
+    try {
+      await toggleMemberPaymentStatus(paymentId, payerId);
+    } catch (error) {
+      Alert.alert("Error", `No se pudo actualizar el estado: ${error.message}`);
+    }
+  };
+
+  if (!user) {
+    return (
+      <View style={styles.centeredMessageContainer}>
+        <ActivityIndicator size="large" color={theme.primary} />
+        <Text style={styles.infoText}>Cargando usuario...</Text>
+      </View>
+    );
+  }
+  
+  const renderPaymentItemContent = (payment) => (
+    <Animatable.View animation="fadeInUp" style={styles.paymentItemCard}>
+      <View style={styles.paymentItemHeader}>
+        <Text style={styles.paymentDescription} numberOfLines={1} ellipsizeMode="tail">{payment.description}</Text>
+        <View style={styles.paymentHeaderActions}>
+          <TouchableOpacity 
+            style={styles.paymentActionIcon}
+            onPress={() => navigation.navigate('ShoppingScreen', { screen: 'PaymentsTab', params: { action: 'addPayment', fromHome: true }})}
+          >
+            <Ionicons name="add-circle-outline" size={28} color={theme.primary} />
+          </TouchableOpacity>
+          {/* Icono para Eliminar pago actual (solo si es propietario) */}
+          {currentGroup && currentGroup.owner === user?.uid && (
+            <TouchableOpacity 
+              onPress={() => handleDeletePayment(payment.id, payment.description)} 
+              style={styles.paymentActionIcon}
+            >
+              <Ionicons name="trash-outline" size={26} color={theme.error} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {payment.amount != null && (
+        <Text style={styles.paymentAmount}>
+          {payment.amount.toFixed(2)} €
+        </Text>
+      )}
+      
+      <View style={styles.payersListContainer}>
+        {Object.entries(payment.payers || {}).length > 0 ? (
+          Object.entries(payment.payers || {}).map(([payerId, payerData]) => (
+            <View key={payerId} style={styles.payerItem}>
+              <Text style={styles.payerName} numberOfLines={1} ellipsizeMode="tail">{payerData.userName || 'Usuario Desc.'}</Text>
+              <TouchableOpacity 
+                onPress={() => handleTogglePayerStatus(payment.id, payerId)}
+                disabled={payerId !== user?.uid}
+                style={styles.payerStatusIconContainer}
+              >
+                <Ionicons 
+                  name={payerData.paid ? "checkmark-circle" : (payerId === user?.uid ? "ellipse-outline" : "person-circle-outline")} 
+                  size={24} 
+                  color={payerData.paid ? theme.success : (payerId === user?.uid ? theme.primary : theme.textSecondary)}
+                />
+              </TouchableOpacity>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.infoTextSmallPayer}>No hay participantes asignados.</Text>
+        )}
+      </View>
+    </Animatable.View>
   );
-  };
-
-  const handleReject = (groupId, requestingUserId, userName) => {
-  Alert.alert(
-  'Confirmar Rechazo',
-  `¿Estás seguro de que quieres rechazar la solicitud de ${userName}?`,
-  [
-  { text: 'Cancelar', style: 'cancel' },
-  {
-  text: 'Rechazar',
-  style: 'destructive',
-  onPress: () => handleGenericAction(
-  () => rejectJoinRequest(groupId, requestingUserId),
-  `La solicitud de ${userName} ha sido rechazada.`,
-  'No se pudo rechazar la solicitud'
-  ),
-  },
-  ],
-  { cancelable: true }
-  );
-  };
-
-  const handleLeaveGroup = () => {
-  if (!currentGroup) return;
-  Alert.alert(
-  "Abandonar Grupo",
-  `¿Seguro que quieres abandonar "${currentGroup.name}"?`,
-  [
-  { text: "Cancelar", style: "cancel" },
-  {
-  text: "Abandonar",
-  style: "destructive",
-  onPress: () => handleGenericAction(
-  () => leaveGroup(currentGroup.id),
-  `Has abandonado el grupo "${currentGroup.name}".`,
-  'No se pudo abandonar el grupo'
-  ),
-  },
-  ],
-  { cancelable: true }
-  );
-  };
-
-  const handleModalAddPayment = () => {
-  if (!currentGroup || !paymentDescription.trim()) {
-  Alert.alert("Error", "Descripción y grupo son necesarios.");
-  return;
-  }
-  handleGenericAction(
-  () => addPayment(paymentDescription, paymentAmount || null),
-  "Pago añadido correctamente.",
-  'No se pudo añadir el pago'
-  ).then(() => {
-  if(!loadingAction) {
-  setPaymentDescription('');
-  setPaymentAmount('');
-  setIsAddPaymentModalVisible(false);
-  }
-  });
-  };
-
-  const handleTogglePayment = (paymentId, memberUidToToggle) => {
-  if (!user) return;
-  handleGenericAction(
-  () => toggleMemberPaymentStatus(paymentId, memberUidToToggle),
-  "Estado de pago actualizado.",
-  "No se pudo actualizar el estado del pago"
-  );
-  };
-
-  const handleDeleteCurrentPayment = (paymentIdToDelete, paymentDescToDelete) => {
-  if (!currentGroup) return;
-  Alert.alert(
-  "Confirmar Eliminación",
-  `¿Eliminar el pago "${paymentDescToDelete}"?`,
-  [
-  { text: "Cancelar", style: "cancel" },
-  {
-  text: "Eliminar",
-  style: "destructive",
-  onPress: () => handleGenericAction(
-  () => deletePayment(paymentIdToDelete),
-  "Pago eliminado.",
-  'No se pudo eliminar el pago'
-  )
-  }
-  ],
-  { cancelable: true }
-  );
-  };
-
-  const renderPaymentCard = (payment, index) => (
-  <Animatable.View
-  animation="fadeInRight"
-  duration={600}
-  delay={index * 100}
-  key={payment.id}
-  style={styles.slide}
-  >
-  <View style={styles.paymentItemContainer}>
-  <View style={styles.paymentCardActions}>
-  <TouchableOpacity onPress={() => setIsAddPaymentModalVisible(true)} style={styles.paymentActionButton}>
-  <Ionicons name="add-circle-outline" size={30} color={theme.primary} />
-  </TouchableOpacity>
-  {payments.length > 0 && currentGroup && user?.uid === payment.createdByUid && (
-  <TouchableOpacity onPress={() => handleDeleteCurrentPayment(payment.id, payment.description)} style={styles.paymentActionButton}>
-  <Ionicons name="trash-outline" size={28} color={theme.error} />
-  </TouchableOpacity>
-  )}
-  </View>
-  <View style={styles.paymentHeader}>
-  <Text style={styles.paymentTitle}>{payment.description}</Text>
-  {payment.amount != null && <Text style={styles.paymentAmount}>{`${parseFloat(payment.amount).toFixed(2)}€`}</Text>}
-  </View>
-  <ScrollView style={styles.payersScrollView} nestedScrollEnabled={true}>
-  {Object.entries(payment.payers || {}).map(([memberUid, payerData]) => (
-  <TouchableOpacity
-  key={memberUid}
-  style={styles.payerRow}
-  onPress={() => handleTogglePayment(payment.id, memberUid)}
-  disabled={user?.uid !== memberUid || loadingAction}
-  >
-  <Text style={[styles.payerName, user?.uid !== memberUid && styles.disabledText, payerData.paid && styles.paidText]}>
-  {payerData.userName}
-  </Text>
-  <Ionicons
-  name={payerData.paid ? "checkmark-circle" : (user?.uid === memberUid ? "ellipse-outline" : "person-circle-outline")}
-  size={26}
-  color={payerData.paid ? theme.success : (user?.uid === memberUid ? theme.primary : theme.textSecondary)}
-  />
-  </TouchableOpacity>
-  ))}
-  </ScrollView>
-  </View>
-  </Animatable.View>
-  );
-
-  const isCurrentUserOwner = currentGroup && user && currentGroup.owner === user.uid;
 
   return (
-  <ScrollView style={styles.container} contentContainerStyle={styles.scrollContentContainer}>
-  <Modal
-  animationType="slide"
-  transparent={true}
-  visible={isAddPaymentModalVisible}
-  onRequestClose={() => setIsAddPaymentModalVisible(false)}
-  >
-  <View style={styles.modalCenteredView}>
-  <Animatable.View animation="zoomIn" duration={300} style={styles.modalView}>
-  <Text style={styles.modalTitle}>Añadir Nuevo Pago</Text>
-  <TextInput
-  style={styles.modalInput}
-  placeholder="Descripción del pago"
-  placeholderTextColor={theme.placeholder}
-  value={paymentDescription}
-  onChangeText={setPaymentDescription}
-  />
-  <TextInput
-  style={styles.modalInput}
-  placeholder="Monto total (€) (opcional)"
-  placeholderTextColor={theme.placeholder}
-  value={paymentAmount}
-  onChangeText={setPaymentAmount}
-  keyboardType="numeric"
-  />
-  <View style={styles.modalButtonContainer}>
-  <TouchableOpacity
-  style={[styles.modalButton, {backgroundColor: theme.error}]}
-  onPress={() => setIsAddPaymentModalVisible(false)}
-  disabled={loadingAction}
-  >
-  <Text style={styles.modalButtonText}>Cancelar</Text>
-  </TouchableOpacity>
-  <TouchableOpacity
-  style={[styles.modalButton, {backgroundColor: theme.primary}]}
-  onPress={handleModalAddPayment}
-  disabled={loadingAction}
-  >
-  {loadingAction ? <ActivityIndicator color={theme.textLight} /> : <Text style={styles.modalButtonText}>Añadir</Text>}
-  </TouchableOpacity>
-  </View>
-  </Animatable.View>
-  </View>
-  </Modal>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animatable.View animation="fadeInDown" duration={800} style={styles.welcomeContainer}>
+          <Ionicons name={user.icon || 'person-circle-outline'} size={50} color={theme.primary} style={styles.userIcon} />
+          <View style={styles.welcomeTextAndActionsContainer}>
+            <View>
+              <Text style={styles.welcomeText}>Hola de nuevo,</Text>
+              <Text style={styles.userName}>{user.name || 'Usuario'}</Text>
+            </View>
+            <View style={styles.welcomeActionsRow}>
+              <TouchableOpacity style={styles.welcomeActionButton} onPress={() => navigateToScreen('BuscarGrupo')}>
+                <Ionicons name="search-outline" size={18} color={theme.primary} />
+                <Text style={styles.welcomeActionButtonText}>Buscar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.welcomeActionButton} onPress={() => navigateToScreen('CrearGrupo')}>
+                <Ionicons name="add-circle-outline" size={18} color={theme.primary} />
+                <Text style={styles.welcomeActionButtonText}>Crear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Animatable.View>
 
-  {currentGroup && currentUserTotalUnpaid > 0 && (
-  <Animatable.View animation="fadeIn" duration={500}>
-  <Text style={styles.totalUnpaidText}>
-  Total Pendiente: {currentUserTotalUnpaid.toFixed(2)}€
-  </Text>
-  </Animatable.View>
-  )}
+        {!currentGroup ? (
+          <Animatable.View animation="fadeInUp" delay={200} style={styles.noGroupContainer}>
+            <Ionicons name="people-off-outline" size={60} color={theme.textSecondary} style={{ marginBottom: 15 }} />
+            <Text style={styles.noGroupText}>No estás en ningún grupo o no hay un grupo seleccionado.</Text>
+            <Text style={styles.noGroupSubText}>Puedes crear uno nuevo o buscar un grupo existente para unirte.</Text>
+            <View style={styles.actionButtonsContainer}>
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.primary }]} onPress={() => navigateToScreen('CrearGrupo')}>
+                <Ionicons name="add-circle-outline" size={20} color={theme.textLight} style={styles.actionIcon} />
+                <Text style={styles.actionButtonText}>Crear Grupo</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.actionButton, { backgroundColor: theme.accent, marginLeft: 10 }]} onPress={() => navigateToScreen('BuscarGrupo')}>
+                <Ionicons name="search-circle-outline" size={20} color={theme.textLight} style={styles.actionIcon} />
+                <Text style={styles.actionButtonText}>Buscar Grupo</Text>
+              </TouchableOpacity>
+            </View>
+          </Animatable.View>
+        ) : (
+          <>
 
-  <Animatable.View animation="fadeInUp" delay={100} style={styles.groupActionsRowContainer}>
-  <TouchableOpacity
-  style={[styles.actionButtonRow, userAppGroups.length >= 5 && styles.disabledButton]}
-  onPress={() => navigation.navigate('BuscarGrupo')}
-  disabled={userAppGroups.length >= 5 || loadingAction}
-  >
-  <Ionicons name="search-outline" size={20} color={theme.textLight} style={styles.actionButtonIcon} />
-  <Text style={styles.actionButtonText}>Buscar Grupo</Text>
-  </TouchableOpacity>
+            
+            <Animatable.View animation="fadeInUp" delay={200} style={styles.summaryContainer}>
+              <View style={styles.summaryBox}>
+                  <Ionicons name="list-circle-outline" size={32} color={theme.accent} />
+                  <Text style={styles.summaryNumber}>{getTotalPendingTasksForGroup()}</Text>
+                  <Text style={styles.summaryLabel}>Tareas Pendientes</Text>
+              </View>
+              <View style={styles.summaryBox}>
+                  <Ionicons name="person-circle-outline" size={32} color={theme.success} />
+                  <Text style={styles.summaryNumber}>{getTotalAssignedToUserInGroup()}</Text>
+                  <Text style={styles.summaryLabel}>Mis Tareas Asignadas</Text>
+              </View>
+            </Animatable.View>
 
-  <TouchableOpacity
-  style={[styles.actionButtonRow, {backgroundColor: theme.accent}, userAppGroups.length >= 5 && styles.disabledButton]}
-  onPress={() => navigation.navigate('CrearGrupo')}
-  disabled={userAppGroups.length >= 5 || loadingAction}
-  >
-  <Ionicons name="add-circle-outline" size={20} color={theme.textLight} style={styles.actionButtonIcon} />
-  <Text style={styles.actionButtonText}>Crear Grupo</Text>
-  </TouchableOpacity>
-  </Animatable.View>
-  {userAppGroups.length >= 5 && <Text style={styles.limitText}>Límite de 5 grupos alcanzado.</Text>}
+            <Animatable.View animation="fadeInUp" delay={300}>
+              <Text style={styles.sectionTitle}>Gestión de Pagos</Text>
+            </Animatable.View>
 
-
-
-  {currentGroup ? (
-  <>
-  {isCurrentUserOwner && joinRequests.length > 0 && (
-  <Animatable.View animation="fadeInUp" delay={300}>
-  <Text style={styles.sectionHeader}>Solicitudes para "{currentGroup.name}":</Text>
-  <FlatList
-  data={joinRequests}
-  keyExtractor={request => request.id}
-  renderItem={({ item, index }) => (
-  <Animatable.View animation="fadeInRight" delay={index * 100} style={styles.requestItem}>
-  <Text style={styles.requestUser}>{item.requestingUserName}</Text>
-  <View style={styles.requestActions}>
-  <TouchableOpacity onPress={() => handleApprove(currentGroup.id, item.id, item.requestingUserName)} style={[styles.requestButton, {backgroundColor: theme.success}]} disabled={loadingAction}>
-  <Ionicons name="checkmark-outline" size={20} color={theme.textLight} />
-  </TouchableOpacity>
-  <TouchableOpacity onPress={() => handleReject(currentGroup.id, item.id, item.requestingUserName)} style={[styles.requestButton, {backgroundColor: theme.error}]} disabled={loadingAction}>
-  <Ionicons name="close-outline" size={20} color={theme.textLight} />
-  </TouchableOpacity>
-  </View>
-  </Animatable.View>
-  )}
-  scrollEnabled={false}
-  />
-  </Animatable.View>
-  )}
-
-
-  <Animatable.View animation="fadeInUp" delay={400}>
-  <Text style={styles.sectionHeader}>Pagos en "{currentGroup.name}":</Text>
-  {payments.length > 0 ? (
-  <Swiper
-  style={styles.swiperWrapper}
-  height={380}
-  loop={false}
-  dot={<View style={styles.dot} />}
-  activeDot={<View style={styles.activeDot} />}
-  paginationStyle={styles.paginationStyle}
-  >
-  {payments.map((payment, index) => renderPaymentCard(payment, index))}
-  </Swiper>
-  ) : (
-  <>
-  <Text style={styles.infoText}>No hay pagos registrados.</Text>
-  <TouchableOpacity style={[styles.actionButton, {backgroundColor: theme.accent}]} onPress={() => setIsAddPaymentModalVisible(true)} disabled={loadingAction}>
-  <Ionicons name="add-outline" size={20} color={theme.textLight} style={{marginRight: 8}} />
-  <Text style={styles.actionButtonText}>Añadir Primer Pago</Text>
-  </TouchableOpacity>
-  </>
-  )}
-  </Animatable.View>
-  </>
-  ) : (
-  <Animatable.Text animation="fadeIn" style={styles.infoText}>
-  Selecciona o crea un grupo para ver los detalles.
-  </Animatable.Text>
-  )}
-  {loadingAction && <ActivityIndicator size="large" color={theme.primary} style={styles.fullScreenLoader}/>}
-  </ScrollView>
+            {payments.length === 0 ? (
+              <Animatable.View animation="fadeInUp" delay={350} style={styles.centeredMessageContainerNoItems}>
+                <Ionicons name="wallet-outline" size={50} color={theme.textSecondary} style={{marginBottom:10}}/>
+                <Text style={styles.infoText}>No hay pagos registrados.</Text>
+                <TouchableOpacity 
+                  style={styles.addNewPaymentButtonCentered} 
+                  onPress={() => navigation.navigate('ShoppingScreen', { screen: 'PaymentsTab', params: { action: 'addPayment', fromHome: true }})}
+                >
+                  <Ionicons name="add-circle-outline" size={20} color={theme.textLight} style={{marginRight: 8}} />
+                  <Text style={styles.addNewPaymentButtonText}>Añadir Primer Pago</Text>
+                </TouchableOpacity>
+              </Animatable.View>
+            ) : (
+              // Modificado: View -> ImageBackground para el carrusel de pagos
+              <ImageBackground
+                source={require('../../assets/pagos.png')}
+                style={styles.paymentsCarouselBackground} // Usar el nuevo estilo
+                imageStyle={styles.paymentsCarouselBackgroundImage} // Estilo para la imagen interna
+                resizeMode="cover" // 'cover' para llenar el fondo, 'contain' para asegurar visibilidad completa
+              >
+                <Swiper
+                  style={styles.swiperWrapper}
+                  height={370} 
+                  showsPagination={true}
+                  paginationStyle={styles.paginationStyle}
+                  dot={<View style={[styles.dot, { backgroundColor: theme.borderMuted || theme.border }]} />}
+                  activeDot={<View style={[styles.activeDot, { backgroundColor: theme.primary }]} />}
+                  loop={false}
+                  removeClippedSubviews={false}
+                >
+                  {payments.map(payment => (
+                    <View key={payment.id} style={styles.slide}>
+                      {renderPaymentItemContent(payment)}
+                    </View>
+                  ))}
+                </Swiper>
+              </ImageBackground>
+            )}
+          </>
+        )}
+        {/* Eliminada la Image de fondo/pie de página original, ya que ahora está en ImageBackground */}
+      </ScrollView>
+    </View>
   );
- }
+}
 
- const getStyles = (theme) => StyleSheet.create({
-  container: {
-  flex: 1,
-  backgroundColor: theme.background,
+const getStyles = (theme) => StyleSheet.create({
+  container: { 
+    flex: 1,
   },
-  scrollContentContainer: {
-  paddingBottom: 30,
-  paddingHorizontal: 15,
+  contentContainer: { 
+    paddingBottom: 60, // Ajustado, ya no necesita tanto espacio para una imagen al final
+    paddingHorizontal: 15,
   },
-  groupActionsRowContainer: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginVertical: 15,
-  paddingHorizontal: 5,
+  // ... (otros estilos permanecen igual)
+  welcomeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    marginBottom: 10,
+    backgroundColor: theme.cardBackgroundSlightlyOpaque || theme.cardBackground + 'F2',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    shadowColor: theme.shadowColor,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  actionButtonRow: {
-  flexDirection: 'row',
-  backgroundColor: theme.primary,
-  paddingVertical: 12,
-  paddingHorizontal: 15,
-  borderRadius: 25,
-  alignItems: 'center',
-  justifyContent: 'center',
-  flex: 1,
-  marginHorizontal: 5,
-  shadowColor: theme.shadowColor,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.2,
-  shadowRadius: 4,
-  elevation: 3,
-  minHeight: 48,
+  userIcon: {
+    marginRight: 12,
   },
-  actionButtonIcon: {
-  marginRight: 8,
+  welcomeTextAndActionsContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  welcomeText: {
+    fontSize: 16,
+    color: theme.textSecondary,
+  },
+  userName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: theme.textPrimary,
+    marginBottom: 8,
+  },
+  welcomeActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  welcomeActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.inputBackground || theme.background,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.borderLight || theme.border,
+    marginRight: 10,
+  },
+  welcomeActionButtonText: {
+    color: theme.primary,
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 5,
+  },
+  noGroupContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 25,
+    marginTop: 20,
+    backgroundColor: theme.cardBackgroundSlightlyOpaque || theme.cardBackground + 'F2',
+    borderRadius: 12,
+    shadowColor: theme.shadowColor,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  noGroupText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: theme.textPrimary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  noGroupSubText: {
+    fontSize: 14,
+    color: theme.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  actionButtonsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    shadowColor: theme.shadowColor,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 4,
+  },
+  actionIcon: {
+    marginRight: 8,
   },
   actionButtonText: {
-  color: theme.textLight,
-  fontSize: 14,
-  fontWeight: '600',
+    color: theme.textLight,
+    fontSize: 15,
+    fontWeight: 'bold',
   },
-  disabledButton: {
-  backgroundColor: theme.border,
-  opacity: 0.7,
+  currentGroupContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    backgroundColor: theme.infoBackgroundSlightlyOpaque || (theme.infoBackground || '#e0f3ff') + 'F2',
+    borderRadius: 10,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.primary,
   },
-  limitText: {
-  textAlign: 'center',
-  color: theme.error,
-  fontSize: 13,
-  marginBottom: 10,
+  currentGroupText: {
+    fontSize: 15,
+    color: theme.textPrimary,
+    marginLeft: 10,
   },
-  leaveGroupButtonContainer: {
-  marginBottom: 20,
+  currentGroupName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: theme.primary,
   },
-  sectionHeader: {
-  fontSize: 20,
-  fontWeight: 'bold',
-  marginTop: 25,
-  marginBottom: 15,
-  color: theme.textPrimary,
+  summaryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 25,
   },
-  requestItem: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  paddingVertical: 12,
-  paddingHorizontal: 15,
-  backgroundColor: theme.cardBackground,
-  borderRadius: 10,
-  marginBottom: 10,
-  shadowColor: theme.shadowColor,
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.08,
-  shadowRadius: 3,
-  elevation: 2,
+  summaryBox: {
+    backgroundColor: theme.cardBackgroundSlightlyOpaque || theme.cardBackground + 'F2',
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    width: '47%', 
+    shadowColor: theme.shadowColor,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  requestUser: {
-  fontSize: 16,
-  color: theme.textPrimary,
-  fontWeight: '500',
+  summaryNumber: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    color: theme.textPrimary,
+    marginTop: 5,
   },
-  requestActions: {
-  flexDirection: 'row',
+  summaryLabel: {
+    fontSize: 13,
+    color: theme.textSecondary,
+    marginTop: 3,
   },
-  requestButton: {
-  marginLeft: 10,
-  padding: 8,
-  borderRadius: 8,
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.textPrimary,
+    marginBottom: 8,
+    paddingLeft: 5,
+  },
+  addNewPaymentButtonCentered: {
+    flexDirection: 'row',
+    backgroundColor: theme.primary,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    shadowColor: theme.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  addNewPaymentButtonText: {
+    color: theme.textLight,
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  centeredMessageContainerNoItems: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 25,
+    paddingHorizontal: 20,
+    backgroundColor: theme.cardBackgroundTransparentLight || theme.cardBackground + 'CC',
+    borderRadius: 10,
+    marginBottom: 20,
+    minHeight: 200,
   },
   infoText: {
-  marginTop: 20,
-  textAlign: 'center',
-  fontSize: 16,
-  color: theme.textSecondary,
-  marginBottom: 15,
-  paddingHorizontal: 10,
+    fontSize: 15,
+    color: theme.textSecondaryStrong || theme.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
   },
-  totalUnpaidText: {
-  fontSize: 22,
-  fontWeight: 'bold',
-  textAlign: 'center',
-  marginVertical: 20,
-  color: theme.error,
-  padding: 10,
-  backgroundColor: theme.cardBackground,
-  borderRadius: 10,
-  shadowColor: theme.shadowColor,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.1,
-  shadowRadius: 5,
-  elevation: 3,
+  infoTextSmallPayer: {
+    fontSize: 13,
+    color: theme.textSecondaryStronger || theme.textSecondary,
+    textAlign: 'center',
+    marginTop: 10,
+    fontStyle: 'italic',
   },
-  swiperWrapper: {
-  height: 380,
+  paymentItemCard: {
+    backgroundColor: theme.cardBackgroundTransparent || theme.cardBackground + 'D9', // 90% Opacidad (E6) - se mantiene
+    borderRadius: 1,
+    paddingHorizontal: 15,
+    paddingTop: 12,
+    paddingBottom: 10,
+    shadowColor: theme.shadowColor,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 1,
+    elevation: 5,
+    width: screenWidth * 0.88,
+    alignSelf: 'center',
+    minHeight: 310,
   },
-  slide: {
-  flex: 1,
-  justifyContent: 'center',
-  alignItems: 'center',
-  paddingBottom: 30,
+  paymentItemHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  paymentItemContainer: {
-  width: screenWidth * 0.9,
-  height: 330,
-  backgroundColor: theme.cardBackground,
-  borderRadius: 16,
-  padding: 20,
-  paddingTop: 50,
-  shadowColor: theme.shadowColor,
-  shadowOffset: { width: 0, height: 4 },
-  shadowOpacity: 0.12,
-  shadowRadius: 8,
-  elevation: 6,
-  position: 'relative',
+  paymentDescription: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: theme.textPrimary,
+    flex: 1, 
+    marginRight: 10,
   },
-  paymentCardActions: {
-  position: 'absolute',
-  top: 15,
-  right: 15,
-  flexDirection: 'row',
-  zIndex: 1,
+  paymentHeaderActions: { // Contenedor para los iconos de acción
+    flexDirection: 'row', // Asegura que los iconos estén uno al lado del otro
+    alignItems: 'center',
   },
-  paymentActionButton: {
-  marginLeft: 12,
-  padding: 5,
-  },
-  paymentHeader: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 18,
-  borderBottomWidth: 1,
-  borderBottomColor: theme.border,
-  paddingBottom: 10,
-  },
-  paymentTitle: {
-  fontSize: 20,
-  fontWeight: 'bold',
-  color: theme.primary,
-  flexShrink: 1,
+  paymentActionIcon: {
+    padding: 5, 
+    marginLeft: 10, // Espacio entre iconos si hay más de uno
   },
   paymentAmount: {
-  fontSize: 18,
-  fontWeight: '600',
-  color: theme.accent,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.accent,
+    alignSelf: 'flex-end',
+    marginTop: 0, 
+    marginBottom: 10,
+    marginRight: 5,
   },
-  payersScrollView: {
-  flex: 1,
+  payersListContainer: {
+    marginTop: 5,
+    flex: 1, 
   },
-  payerRow: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  paddingVertical: 14,
-  borderTopWidth: 1,
-  borderTopColor: theme.border,
-  paddingRight: 15
+  payerItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 9,
+    borderTopWidth: 1,
+    borderTopColor: theme.borderTransparent || theme.borderLightest + '99',
   },
   payerName: {
-  fontSize: 16,
-  color: theme.textPrimary,
-  fontWeight: '500',
+    fontSize: 15,
+    color: theme.textPrimary,
+    flexShrink: 1,
+    marginRight: 8,
   },
-  paidText: {
-  textDecorationLine: 'line-through',
-  color: theme.textSecondary,
-
+  payerStatusIconContainer: {
+    paddingHorizontal: 4,
   },
-  disabledText: {
-  color: theme.textSecondary,
+  // Estilo original 'paymentsCarouselContainer' ahora es 'paymentsCarouselBackground' para ImageBackground
+  paymentsCarouselBackground: { // Estilo para el componente ImageBackground
+    height: 380, 
+    marginBottom: 20,
+    // overflow: 'hidden', // Descomentar si se usa borderRadius para que la imagen se recorte bien
+    // borderRadius: 10, // Opcional: si quieres que el fondo tenga bordes redondeados
   },
-  dot: {
-  backgroundColor: theme.border,
-  width: 10, height: 10, borderRadius: 5,
-  marginLeft: 5, marginRight: 5,
+  paymentsCarouselBackgroundImage: { // Estilo para la imagen DENTRO de ImageBackground
+    opacity: 0.6, // Hacer la imagen de fondo sutil. Ajusta este valor (0.0 a 1.0)
+     resizeMode: 'contain'
+    // borderRadius: 10, // Si el contenedor tiene borderRadius, la imagen también debería tenerlo
   },
-  activeDot: {
-  backgroundColor: theme.primary,
-  width: 10, height: 10, borderRadius: 5,
-  marginLeft: 5, marginRight: 5,
+  swiperWrapper: {},
+  slide: {
+    flex: 1,
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: 'transparent', // Importante para que se vea el ImageBackground
+    paddingVertical: 2, 
   },
   paginationStyle: {
-  bottom: 0,
+    bottom: -2, 
   },
-  modalCenteredView: {
-  flex: 1,
-  justifyContent: "center",
-  alignItems: "center",
-  backgroundColor: 'rgba(0,0,0,0.6)'
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginLeft: 5,
+    marginRight: 5,
   },
-  modalView: {
-  width: '90%',
-  margin: 20,
-  backgroundColor: theme.cardBackground,
-  borderRadius: 20,
-  padding: 25,
-  alignItems: "center",
-  shadowColor: theme.shadowColor,
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.25,
-  shadowRadius: 6,
-  elevation: 10,
+  activeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginLeft: 5,
+    marginRight: 5,
   },
-  modalTitle: {
-  marginBottom: 20,
-  textAlign: "center",
-  fontSize: 20,
-  fontWeight: 'bold',
-  color: theme.textPrimary,
-  },
-  modalInput: {
-  width: '100%',
-  height: 50,
-  backgroundColor: theme.inputBackground,
-  borderWidth: 1,
-  borderColor: theme.border,
-  paddingHorizontal: 15,
-  marginBottom: 15,
-  borderRadius: 10,
-  fontSize: 16,
-  color: theme.textPrimary,
-  },
-  modalButtonContainer: {
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  width: '100%',
-  marginTop: 20,
-  },
-  modalButton: {
-  flex: 1,
-  paddingVertical: 12,
-  borderRadius: 10,
-  alignItems: 'center',
-  marginHorizontal: 5,
-  minHeight: 48,
-  justifyContent: 'center',
-  },
-  modalButtonText: {
-  color: theme.textLight,
-  fontSize: 16,
-  fontWeight: 'bold',
-  }
- });
+  // Eliminado bottomBackgroundImage ya que la imagen ahora es fondo del carrusel de pagos
+  // ... (otros estilos como centeredMessageContainer, etc., permanecen)
+});
+
