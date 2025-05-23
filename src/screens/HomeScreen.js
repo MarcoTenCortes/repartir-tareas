@@ -285,7 +285,7 @@ const handleModalAddPayment = () => {
             )}
           </>
         )}
-       // paste-2.txt: Pega esto dentro del return(...) de HomeScreen
+
 <Modal
   animationType="slide"
   transparent={true}

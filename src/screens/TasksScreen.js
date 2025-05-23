@@ -10,16 +10,45 @@ import Animated, {
   useAnimatedStyle,
   runOnJS,
 } from 'react-native-reanimated';
+import { Svg, Defs, Pattern, Path as SvgPath, Rect as SvgRect } from 'react-native-svg';
 
 import { UserContext } from '../context/UserContext';
 import { GroupContext } from '../context/GroupContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 
-const AVAILABLE_SHAPES = ['rectangle', 'circle'];
+const AVAILABLE_SHAPES = ['rectangle', 'circle', 'square'];
 const MIN_ROOM_SIZE = 40;
 const MAX_ROOM_SIZE = 250;
 const SNAP_DURATION_HIGHLIGHT_MS = 700;
+
+const GridBackground = () => {
+  const patternSize = 20;
+  const lineColor = 'rgba(204, 204, 204, 0.5)';
+
+  return (
+    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+      <Svg width="100%" height="100%">
+        <Defs>
+          <Pattern
+            id="grid"
+            width={patternSize}
+            height={patternSize}
+            patternUnits="userSpaceOnUse"
+          >
+            <SvgPath
+              d={`M ${patternSize} 0 L 0 0 L 0 ${patternSize}`}
+              stroke={lineColor}
+              strokeWidth="1"
+              fill="none"
+            />
+          </Pattern>
+        </Defs>
+        <SvgRect width="100%" height="100%" fill="url(#grid)" />
+      </Svg>
+    </View>
+  );
+};
 
 // --- DraggableRoomComponent ---
 const DraggableRoomComponent = ({
@@ -53,14 +82,22 @@ const DraggableRoomComponent = ({
       dynamicBorderColor = theme.warning || 'yellow';
     }
 
+    let borderRadiusValue;
+    if (room.shape === 'circle') {
+      borderRadiusValue = Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, Math.max(currentWidth, currentHeight))) / 2;
+    } else if (room.shape === 'square') {
+      borderRadiusValue = 0;
+    } else {
+      borderRadiusValue = 8;
+    }
+
     return {
       width: Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, currentWidth)),
       height: Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, currentHeight)),
       borderColor: dynamicBorderColor,
       borderWidth: isHighlighted || selected ? 3 : 1,
-      borderRadius: room.shape === 'circle'
-        ? Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, Math.max(currentWidth, currentHeight))) / 2
-        : 8,
+      borderRadius: borderRadiusValue,
+      overflow: 'hidden', // <--- MODIFICACIÓN CLAVE: Asegura que el contenido se recorte a la forma del borde
       transform: [
         { translateX: translateX.value },
         { translateY: translateY.value },
@@ -139,7 +176,7 @@ const getScreenStyles = (theme) => StyleSheet.create({
   listHeaderContainer: { padding: 16 },
   inputRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'center' },
   input: { flex: 1, borderWidth: 1, borderColor: theme.border || '#ccc', padding: 10, marginRight: 8, borderRadius: 8, color: theme.textPrimary, backgroundColor: theme.inputBackground },
-  createRoomButtonIcon: { // Estilo reutilizado para ambos botones de icono
+  createRoomButtonIcon: {
     paddingLeft: 8,
     paddingRight: 8,
     paddingVertical: 8,
@@ -147,7 +184,16 @@ const getScreenStyles = (theme) => StyleSheet.create({
     alignItems: 'center',
   },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 16, marginBottom: 8, color: theme.textPrimary },
-  mapContainer: { height: 300, borderWidth: 1, borderColor: theme.border || 'grey',     backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cdefs%3E%3Cpattern id=\'grid\' width=\'20\' height=\'20\' patternUnits=\'userSpaceOnUse\'%3E%3Cpath d=\'M 20 0 L 0 0 0 20\' fill=\'none\' stroke=\'rgba(204,204,204,0.5)\' stroke-width=\'1\'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'url(%23grid)\' /%3E%3C/svg%3E")', position: 'relative', overflow: 'hidden', marginBottom: 20, borderRadius: 8 },
+  mapContainer: {
+    height: 300,
+    borderWidth: 1,
+    borderColor: theme.border || 'grey',
+    position: 'relative',
+    overflow: 'hidden',
+    marginBottom: 20,
+    borderRadius: 8,
+    backgroundColor: theme.background,
+  },
   draggableWrapper: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   roomBase: { padding: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, overflow: 'hidden' },
   selectedRoom: {},
@@ -210,6 +256,7 @@ return (
         </View>
 
         <View style={styles.mapContainer} onLayout={handleMapLayout}>
+          <GridBackground />
           {rooms.map((room) => (
             <DraggableRoomComponent
               key={room.id}
@@ -241,25 +288,36 @@ return (
             value={newTaskName}
             onChangeText={setNewTaskName}
           />
-          {/* --- INICIO DE LA MODIFICACIÓN DEL BOTÓN "AÑADIR TAREA" --- */}
           <TouchableOpacity
             onPress={handleCreateTaskForSelectedRoom}
-            style={styles.createRoomButtonIcon} // Reutilizamos el estilo
+            style={styles.createRoomButtonIcon}
           >
             <Ionicons
-              name="arrow-forward-outline" // Icono de flecha hacia la derecha
-              size={28} // Tamaño del icono
-              color={theme.primary} // Color del icono
+              name="arrow-forward-outline"
+              size={28}
+              color={theme.primary}
             />
           </TouchableOpacity>
-          {/* --- FIN DE LA MODIFICACIÓN DEL BOTÓN "AÑADIR TAREA" --- */}
         </View>
       </View>
     )}
   </View>
 );
 }, (prevProps, nextProps) => {
-    return ( prevProps.currentGroup === nextProps.currentGroup && prevProps.rooms === nextProps.rooms && prevProps.newRoomName === nextProps.newRoomName && prevProps.selectedRoom === nextProps.selectedRoom && prevProps.newTaskName === nextProps.newTaskName && prevProps.highlightedRoomIds === nextProps.highlightedRoomIds && prevProps.handleCreateRoom === nextProps.handleCreateRoom && prevProps.handleSelectRoomForEditing === nextProps.handleSelectRoomForEditing && prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom && prevProps.handleMapLayout === nextProps.handleMapLayout && prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease && prevProps.onUpdateRoomGestureProperties === nextProps.onUpdateRoomGestureProperties && prevProps.styles === nextProps.styles && prevProps.theme === nextProps.theme );
+    return ( prevProps.currentGroup === nextProps.currentGroup &&
+             prevProps.rooms === nextProps.rooms &&
+             prevProps.newRoomName === nextProps.newRoomName &&
+             prevProps.selectedRoom === nextProps.selectedRoom &&
+             prevProps.newTaskName === nextProps.newTaskName &&
+             prevProps.highlightedRoomIds === nextProps.highlightedRoomIds &&
+             prevProps.handleCreateRoom === nextProps.handleCreateRoom &&
+             prevProps.handleSelectRoomForEditing === nextProps.handleSelectRoomForEditing &&
+             prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom &&
+             prevProps.handleMapLayout === nextProps.handleMapLayout &&
+             prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease &&
+             prevProps.onUpdateRoomGestureProperties === nextProps.onUpdateRoomGestureProperties &&
+             prevProps.styles === nextProps.styles &&
+             prevProps.theme === nextProps.theme );
 });
 
 export default function TasksScreen() {
@@ -281,7 +339,6 @@ export default function TasksScreen() {
 
   useEffect(() => { if (selectedRoom) setNewTaskName(''); else setNewTaskName(''); }, [selectedRoom]);
   useEffect(() => { return () => { Object.values(snapHighlightTimers.current).forEach(clearTimeout); }; }, []);
-
   const handleMapLayout = useCallback((event) => { const { width, height } = event.nativeEvent.layout; mapContainerLayout.value = { width, height }; }, [mapContainerLayout]);
   const handleCreateRoom = useCallback(async () => {
     if (!newRoomName.trim()) { Alert.alert('Error', 'Nombre hab. vacío'); return; } if (!currentGroup) { Alert.alert('Error', 'Selecciona grupo'); return; }
@@ -431,8 +488,7 @@ export default function TasksScreen() {
     if (!selectedRoom) return null;
     return ( <View style={styles.deleteRoomButtonContainer}><TouchableOpacity style={styles.deleteRoomButton} onPress={handleDeleteSelectedRoom}><Ionicons name="trash-outline" size={20} color={theme.textLight || '#fff'} /><Text style={styles.deleteRoomButtonText}>Eliminar Habitación</Text></TouchableOpacity></View> );
   }, [selectedRoom, handleDeleteSelectedRoom, styles, theme]);
-
-return (
+  return (
   <FlatList
     style={styles.container}
     data={tasksForSelectedRoom}
