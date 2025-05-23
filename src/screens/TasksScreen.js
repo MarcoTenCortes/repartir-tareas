@@ -2,7 +2,7 @@
 import React, { useState, useContext, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, Button, FlatList, Alert,
-  StyleSheet, Dimensions, TouchableOpacity, Image // <--- Image ha sido añadido aquí
+  StyleSheet, Dimensions, TouchableOpacity, Image
 } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -24,23 +24,23 @@ const SNAP_DURATION_HIGHLIGHT_MS = 700;
 // --- DraggableRoomComponent ---
 const DraggableRoomComponent = ({
   room, onSelectRoom, onDragEnd, onUpdateRoomGestureProperties,
-  selected, initialPosition, styles, isHighlighted // isHighlighted prop
+  selected, initialPosition, styles, isHighlighted
 }) => {
   const translateX = useSharedValue(initialPosition.x);
   const translateY = useSharedValue(initialPosition.y);
   const dragStartX = useSharedValue(0);
   const dragStartY = useSharedValue(0);
   const scale = useSharedValue(1);
-  const rotation = useSharedValue(0); // Gesture rotation delta in radians
-  const savedRotation = useSharedValue(Number(room.rotation) || 0); // Committed rotation in degrees
+  const rotation = useSharedValue(0);
+  const savedRotation = useSharedValue(Number(room.rotation) || 0);
   const { theme } = useTheme();
 
   useEffect(() => {
     translateX.value = initialPosition.x;
     translateY.value = initialPosition.y;
-    scale.value = 1; // Reset gesture scale
-    rotation.value = 0; // Reset gesture rotation delta
-    savedRotation.value = Number(room.rotation) || 0; // Sync with DB rotation
+    scale.value = 1;
+    rotation.value = 0;
+    savedRotation.value = Number(room.rotation) || 0;
   }, [room.id, initialPosition.x, initialPosition.y, room.rotation]);
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -50,14 +50,14 @@ const DraggableRoomComponent = ({
 
     let dynamicBorderColor = selected ? (theme.error || 'red') : (theme.accent || 'blue');
     if (isHighlighted) {
-      dynamicBorderColor = theme.warning || 'yellow'; // Use theme.warning for highlight
+      dynamicBorderColor = theme.warning || 'yellow';
     }
 
     return {
       width: Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, currentWidth)),
       height: Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, currentHeight)),
       borderColor: dynamicBorderColor,
-      borderWidth: isHighlighted || selected ? 3 : 1, // Thicker border
+      borderWidth: isHighlighted || selected ? 3 : 1,
       borderRadius: room.shape === 'circle'
         ? Math.max(MIN_ROOM_SIZE, Math.min(MAX_ROOM_SIZE, Math.max(currentWidth, currentHeight))) / 2
         : 8,
@@ -78,7 +78,6 @@ const DraggableRoomComponent = ({
     .onUpdate((event) => {
       translateX.value = dragStartX.value + event.translationX;
       translateY.value = dragStartY.value + event.translationY;
-
     })
     .onEnd(() => {
       if (onDragEnd) {
@@ -140,11 +139,18 @@ const getScreenStyles = (theme) => StyleSheet.create({
   listHeaderContainer: { padding: 16 },
   inputRow: { flexDirection: 'row', marginBottom: 12, alignItems: 'center' },
   input: { flex: 1, borderWidth: 1, borderColor: theme.border || '#ccc', padding: 10, marginRight: 8, borderRadius: 8, color: theme.textPrimary, backgroundColor: theme.inputBackground },
+  createRoomButtonIcon: { // Estilo reutilizado para ambos botones de icono
+    paddingLeft: 8,
+    paddingRight: 8,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 16, marginBottom: 8, color: theme.textPrimary },
-  mapContainer: { height: 300, borderWidth: 1, borderColor: theme.border || 'grey', backgroundColor: theme.cardBackground || '#f0f0f0', position: 'relative', overflow: 'hidden', marginBottom: 20, borderRadius: 8 },
+  mapContainer: { height: 300, borderWidth: 1, borderColor: theme.border || 'grey',     backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cdefs%3E%3Cpattern id=\'grid\' width=\'20\' height=\'20\' patternUnits=\'userSpaceOnUse\'%3E%3Cpath d=\'M 20 0 L 0 0 0 20\' fill=\'none\' stroke=\'rgba(204,204,204,0.5)\' stroke-width=\'1\'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\'100%25\' height=\'100%25\' fill=\'url(%23grid)\' /%3E%3C/svg%3E")', position: 'relative', overflow: 'hidden', marginBottom: 20, borderRadius: 8 },
   draggableWrapper: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
   roomBase: { padding: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center', width: '100%', height: '100%', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 3, overflow: 'hidden' },
-  selectedRoom: {}, // Not strictly needed as animatedStyle handles selection border
+  selectedRoom: {},
   roomName: { fontWeight: 'bold', color: theme.textLight || '#fff', fontSize: 14 },
   tasksSectionHeader: { marginTop: 20, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.border || '#e0e0e0' },
   deleteRoomButtonContainer: { marginVertical: 15, paddingHorizontal: 16, alignItems: 'center' },
@@ -159,7 +165,7 @@ const getScreenStyles = (theme) => StyleSheet.create({
   actionIcon: { marginLeft: 10, padding: 5 },
   emptyTextContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 20 },
   emptyText: { textAlign: 'center', color: theme.textSecondary, fontSize: 16, paddingHorizontal: 16 },
-  emptyStateImage: { // <--- Nuevo estilo para la imagen
+  emptyStateImage: {
     width: 100,
     height: 100,
     marginTop: 15,
@@ -167,14 +173,91 @@ const getScreenStyles = (theme) => StyleSheet.create({
   },
 });
 
-
 const ListHeaderComponent = React.memo(({
   currentGroup, rooms, newRoomName, setNewRoomName, handleCreateRoom,
   selectedRoom, handleSelectRoomForEditing, newTaskName, setNewTaskName, handleCreateTaskForSelectedRoom,
   mapContainerLayout, handleMapLayout, handleRoomDragRelease, onUpdateRoomGestureProperties,
   highlightedRoomIds, styles, theme,
 }) => {
-  return ( <View style={styles.listHeaderContainer}> <Text style={styles.sectionTitle}>Habitaciones del Grupo</Text> {!currentGroup && <Text style={styles.emptyText}>Por favor, selecciona un grupo.</Text>} {currentGroup && ( <> <View style={styles.inputRow}> <TextInput style={styles.input} placeholder="Nombre nueva habitación" placeholderTextColor={theme.placeholder} value={newRoomName} onChangeText={setNewRoomName} /> <Button title="Crear Habitación" onPress={handleCreateRoom} color={theme.primary} /> </View> <View style={styles.mapContainer} onLayout={handleMapLayout}> {rooms.map((room) => ( <DraggableRoomComponent key={room.id} room={room} initialPosition={room.position || { x: 0, y: 0 }} onSelectRoom={() => handleSelectRoomForEditing(room)} onDragEnd={handleRoomDragRelease} onUpdateRoomGestureProperties={onUpdateRoomGestureProperties} selected={selectedRoom?.id === room.id} isHighlighted={highlightedRoomIds.has(room.id)} styles={styles} /> ))} </View> </> )} {selectedRoom && ( <View style={styles.tasksSectionHeader}> <Text style={styles.sectionTitle}>Tareas para: {selectedRoom.name}</Text> <View style={styles.inputRow}> <TextInput style={styles.input} placeholder="Nueva tarea para esta habitación" placeholderTextColor={theme.placeholder} value={newTaskName} onChangeText={setNewTaskName} /> <Button title="Añadir Tarea" onPress={handleCreateTaskForSelectedRoom} color={theme.primary} /> </View> </View> )} </View> );
+return (
+  <View style={styles.listHeaderContainer}>
+    <Text style={styles.sectionTitle}>Habitaciones del Grupo</Text>
+
+    {!currentGroup && (
+      <Text style={styles.emptyText}>Por favor, selecciona un grupo.</Text>
+    )}
+
+    {currentGroup && (
+      <>
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Nombre nueva habitación"
+            placeholderTextColor={theme.placeholder}
+            value={newRoomName}
+            onChangeText={setNewRoomName}
+          />
+          <TouchableOpacity
+            onPress={handleCreateRoom}
+            style={styles.createRoomButtonIcon}
+          >
+            <Ionicons
+              name="arrow-forward-outline"
+              size={28}
+              color={theme.primary}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.mapContainer} onLayout={handleMapLayout}>
+          {rooms.map((room) => (
+            <DraggableRoomComponent
+              key={room.id}
+              room={room}
+              initialPosition={room.position || { x: 0, y: 0 }}
+              onSelectRoom={() => handleSelectRoomForEditing(room)}
+              onDragEnd={handleRoomDragRelease}
+              onUpdateRoomGestureProperties={onUpdateRoomGestureProperties}
+              selected={selectedRoom?.id === room.id}
+              isHighlighted={highlightedRoomIds.has(room.id)}
+              styles={styles}
+            />
+          ))}
+        </View>
+      </>
+    )}
+
+    {selectedRoom && (
+      <View style={styles.tasksSectionHeader}>
+        <Text style={styles.sectionTitle}>
+          Tareas para: {selectedRoom.name}
+        </Text>
+
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            placeholder="Nueva tarea para esta habitación"
+            placeholderTextColor={theme.placeholder}
+            value={newTaskName}
+            onChangeText={setNewTaskName}
+          />
+          {/* --- INICIO DE LA MODIFICACIÓN DEL BOTÓN "AÑADIR TAREA" --- */}
+          <TouchableOpacity
+            onPress={handleCreateTaskForSelectedRoom}
+            style={styles.createRoomButtonIcon} // Reutilizamos el estilo
+          >
+            <Ionicons
+              name="arrow-forward-outline" // Icono de flecha hacia la derecha
+              size={28} // Tamaño del icono
+              color={theme.primary} // Color del icono
+            />
+          </TouchableOpacity>
+          {/* --- FIN DE LA MODIFICACIÓN DEL BOTÓN "AÑADIR TAREA" --- */}
+        </View>
+      </View>
+    )}
+  </View>
+);
 }, (prevProps, nextProps) => {
     return ( prevProps.currentGroup === nextProps.currentGroup && prevProps.rooms === nextProps.rooms && prevProps.newRoomName === nextProps.newRoomName && prevProps.selectedRoom === nextProps.selectedRoom && prevProps.newTaskName === nextProps.newTaskName && prevProps.highlightedRoomIds === nextProps.highlightedRoomIds && prevProps.handleCreateRoom === nextProps.handleCreateRoom && prevProps.handleSelectRoomForEditing === nextProps.handleSelectRoomForEditing && prevProps.handleCreateTaskForSelectedRoom === nextProps.handleCreateTaskForSelectedRoom && prevProps.handleMapLayout === nextProps.handleMapLayout && prevProps.handleRoomDragRelease === nextProps.handleRoomDragRelease && prevProps.onUpdateRoomGestureProperties === nextProps.onUpdateRoomGestureProperties && prevProps.styles === nextProps.styles && prevProps.theme === nextProps.theme );
 });
@@ -200,7 +283,7 @@ export default function TasksScreen() {
   useEffect(() => { return () => { Object.values(snapHighlightTimers.current).forEach(clearTimeout); }; }, []);
 
   const handleMapLayout = useCallback((event) => { const { width, height } = event.nativeEvent.layout; mapContainerLayout.value = { width, height }; }, [mapContainerLayout]);
-  const handleCreateRoom = useCallback(async () => { /* ...no change */
+  const handleCreateRoom = useCallback(async () => {
     if (!newRoomName.trim()) { Alert.alert('Error', 'Nombre hab. vacío'); return; } if (!currentGroup) { Alert.alert('Error', 'Selecciona grupo'); return; }
     try { const cW = mapContainerLayout.value.width || Dimensions.get('window').width * 0.8; const cH = mapContainerLayout.value.height || 250; const iRW = 100; const iRH = 60; const mPX = Math.max(0, cW - iRW); const mPY = Math.max(0, cH - iRH); const iX = Math.floor(Math.random() * mPX); const iY = Math.floor(Math.random() * mPY); await createRoom(newRoomName, { x: iX, y: iY }); setNewRoomName(''); } catch (e) { Alert.alert('Error creando hab.', e.message); }
   }, [newRoomName, currentGroup, createRoom, mapContainerLayout, setNewRoomName]);
@@ -208,7 +291,6 @@ export default function TasksScreen() {
   const handleRoomDragRelease = useCallback((draggedRoomId, releasePosition, gestureState) => {
     const draggedRoomData = rooms.find(r => r.id === draggedRoomId);
     if (!draggedRoomData) return;
-
 
     if (snapHighlightTimers.current[draggedRoomId]) {
       clearTimeout(snapHighlightTimers.current[draggedRoomId]);
@@ -224,7 +306,6 @@ export default function TasksScreen() {
     });
 
     if (gestureState === 'start') {
-
       return;
     }
 
@@ -250,12 +331,10 @@ export default function TasksScreen() {
         const dRoomCenterX = dRoom.x + dRoom.width / 2;
         const dRoomCenterY = dRoom.y + dRoom.height / 2;
 
-
         if (dRoomCenterX >= tRoom.x && dRoomCenterX < tRoom.x + tRoom.width &&
             dRoomCenterY >= tRoom.y && dRoomCenterY < tRoom.y + tRoom.height) {
 
           snappedToTarget = tRoom;
-
 
           const snapPositions = [
             { x: tRoom.x - dRoom.width, y: tRoom.y + (tRoom.height - dRoom.height) / 2 },
@@ -268,7 +347,6 @@ export default function TasksScreen() {
           let minDistanceSqToOriginalRelease = Infinity;
 
           snapPositions.forEach(sp => {
-
             const distSq = (dRoom.x - sp.x) ** 2 + (dRoom.y - sp.y) ** 2;
             if (distSq < minDistanceSqToOriginalRelease) {
               minDistanceSqToOriginalRelease = distSq;
@@ -282,28 +360,10 @@ export default function TasksScreen() {
 
             updateRoomPosition(draggedRoomId, { x: finalSnapX, y: finalSnapY });
 
-
             setHighlightedRoomIds(prev => new Set([...prev, draggedRoomId, tRoom.id]));
-
 
             if (snapHighlightTimers.current[draggedRoomId]) clearTimeout(snapHighlightTimers.current[draggedRoomId]);
             if (snapHighlightTimers.current[tRoom.id]) clearTimeout(snapHighlightTimers.current[tRoom.id]);
-
-            const clearHighlightCallback = (id1, id2) => () => {
-              setHighlightedRoomIds(prev => {
-                const newSet = new Set(prev);
-                newSet.delete(id1);
-                newSet.delete(id2);
-                return newSet;
-              });
-              delete snapHighlightTimers.current[id1];
-              delete snapHighlightTimers.current[id2];
-            };
-
-            const timerCallback = clearHighlightCallback(draggedRoomId, tRoom.id);
-            snapHighlightTimers.current[draggedRoomId] = setTimeout(timerCallback, SNAP_DURATION_HIGHLIGHT_MS);
-
-
 
             const pairKey = [draggedRoomId, tRoom.id].sort().join('-');
             if (snapHighlightTimers.current[pairKey]) clearTimeout(snapHighlightTimers.current[pairKey]);
@@ -316,53 +376,32 @@ export default function TasksScreen() {
                   });
                   delete snapHighlightTimers.current[pairKey];
             }, SNAP_DURATION_HIGHLIGHT_MS);
-
             break;
           }
         }
       }
 
       if (!snappedToTarget) {
-
         const constrainedX = Math.max(0, Math.min(releasePosition.x, (mapContainerLayout.value.width || Infinity) - dRoom.width));
         const constrainedY = Math.max(0, Math.min(releasePosition.y, (mapContainerLayout.value.height || Infinity) - dRoom.height));
         updateRoomPosition(draggedRoomId, { x: constrainedX, y: constrainedY });
-
       }
     }
   }, [currentGroup, rooms, updateRoomPosition, mapContainerLayout.value.width, mapContainerLayout.value.height, theme.warning]);
 
   const handleSelectRoomForEditing = useCallback((room) => { setSelectedRoom(prev => (prev?.id === room.id ? null : room)); }, [setSelectedRoom]);
-const handleCreateTaskForSelectedRoom = useCallback(async () => {
+  const handleCreateTaskForSelectedRoom = useCallback(async () => {
+    if (!newTaskName.trim()) { Alert.alert('Error', 'Nombre tarea vacío.'); return; }
+    if (!selectedRoom) { Alert.alert('Error', 'Selecciona hab.'); return; }
+    try { await createTask(newTaskName, selectedRoom.id); setNewTaskName(''); } catch (e) { Alert.alert('Error tarea', e.message); }
+  }, [newTaskName, selectedRoom, createTask, setNewTaskName]);
 
-  if (!newTaskName.trim()) {
-    Alert.alert('Error', 'Nombre tarea vacío.');
-    return;
-  }
-  if (!selectedRoom) {
-    Alert.alert('Error', 'Selecciona hab.');
-    return;
-  }
-
-  try {
-
-    await createTask(newTaskName, selectedRoom.id);
-    setNewTaskName('');
-  } catch (e) {
-    Alert.alert('Error tarea', e.message);
-  }
-}, [newTaskName, selectedRoom, createTask, setNewTaskName]);
-
-const tasksForSelectedRoom = useMemo(() => {
-  return selectedRoom
-    ? allTasks.filter(task => task.roomId === selectedRoom.id)
-    : [];
-}, [selectedRoom, allTasks]);
-
+  const tasksForSelectedRoom = useMemo(() => {
+    return selectedRoom ? allTasks.filter(task => task.roomId === selectedRoom.id) : [];
+  }, [selectedRoom, allTasks]);
 
   const handleUpdateRoomGestureProperties = useCallback(async (roomId, newProps) => {
     if (!roomId || !newProps) return;
-
 
     const pairKeysToClear = Object.keys(snapHighlightTimers.current).filter(key => key.includes(roomId));
     pairKeysToClear.forEach(key => {
@@ -377,7 +416,6 @@ const tasksForSelectedRoom = useMemo(() => {
             newSet.delete(roomId);
             changed = true;
         }
-
         return changed ? newSet : prev;
     });
 
@@ -505,12 +543,10 @@ return (
             <Text style={styles.emptyText}>
               Selecciona una habitación para ver sus tareas.
             </Text>
-            {/* --- INICIO DE LA MODIFICACIÓN --- */}
             <Image
-              source={require('../../assets/raton_limpiando.png')} // Asegúrate que la ruta y el nombre sean correctos
+              source={require('../../assets/raton_limpiando.png')}
               style={styles.emptyStateImage}
             />
-            {/* --- FIN DE LA MODIFICACIÓN --- */}
           </View>
         )
       ) : null
@@ -523,5 +559,4 @@ return (
     }}
   />
 );
-
 }
