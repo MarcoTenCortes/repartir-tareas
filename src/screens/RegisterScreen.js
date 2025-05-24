@@ -1,5 +1,4 @@
 // FILE: src/screens/RegisterScreen.js
-// src/screens/RegisterScreen.js
 import React, { useState, useContext } from 'react';
 import {
   View,
@@ -8,7 +7,6 @@ import {
   StyleSheet,
   Alert,
   Text,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView
@@ -18,16 +16,17 @@ import { UserContext } from '../context/UserContext';
 import { useTheme } from '../context/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 
-// Definir y exportar los iconos disponibles
-export const AVAILABLE_USER_ICONS = [ // <<--- EXPORTAR
-  { name: 'person-circle-outline', family: 'Ionicons' }, 
+export const AVAILABLE_USER_ICONS = [
+  { name: 'person-circle-outline', family: 'Ionicons' },
   { name: 'happy-outline', family: 'Ionicons' },
   { name: 'leaf-outline', family: 'Ionicons' },
   { name: 'rocket-outline', family: 'Ionicons' },
   { name: 'sparkles-outline', family: 'Ionicons' },
   { name: 'star-outline', family: 'Ionicons' },
 ];
-export const DEFAULT_ICON_NAME = 'person-circle-outline'; // <<--- EXPORTAR
+export const DEFAULT_ICON_NAME = 'person-circle-outline';
+
+const MIN_PASS_LENGTH = 6; // Mínimo 6 caracteres
 
 export default function RegisterScreen({ navigation }) {
   const { user, register, logout } = useContext(UserContext);
@@ -39,13 +38,38 @@ export default function RegisterScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [selectedIconName, setSelectedIconName] = useState(DEFAULT_ICON_NAME);
+  const [passwordFocused, setPasswordFocused] = useState(false); // Para mostrar criterios
 
+  // Estados para cada criterio de contraseña
+  const [meetsMinLength, setMeetsMinLength] = useState(false);
+  const [hasLowercase, setHasLowercase] = useState(false);
+  const [hasUppercase, setHasUppercase] = useState(false);
+  const [hasQuestionMark, setHasQuestionMark] = useState(false);
+
+  const passwordCriteria = [
+    { key: 'minLength', label: `Al menos ${MIN_PASS_LENGTH} caracteres`, met: meetsMinLength },
+    { key: 'lowercase', label: 'Una letra minúscula (a-z)', met: hasLowercase },
+    { key: 'uppercase', label: 'Una letra mayúscula (A-Z)', met: hasUppercase },
+    { key: 'questionMark', label: 'Un signo de interrogación (?)', met: hasQuestionMark },
+  ];
+
+  const validatePassword = (text) => {
+    setMeetsMinLength(text.length >= MIN_PASS_LENGTH);
+    setHasLowercase(/[a-z]/.test(text));
+    setHasUppercase(/[A-Z]/.test(text));
+    setHasQuestionMark(/\?/.test(text)); // Busca el carácter literal '?'
+  };
+
+  const handlePasswordChange = (text) => {
+    setPassword(text);
+    validatePassword(text);
+  };
 
   if (user) {
     return (
       <View style={styles.container}>
          <Animatable.View animation="fadeInDown" duration={800} style={styles.loggedInContainer}>
-          <Ionicons name="person-add-outline" size={80} color={theme.success} />
+          <Ionicons name="person-add-outline" size={80} color={theme.success || 'green'} />
           <Text style={styles.title}>Ya tienes una cuenta</Text>
           <Text style={styles.info}>Estás registrado como {user.name}</Text>
           <TouchableOpacity style={styles.buttonPrimary} onPress={logout}>
@@ -61,15 +85,33 @@ export default function RegisterScreen({ navigation }) {
       Alert.alert('Campos incompletos', 'Por favor, completa todos los campos.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Contraseña corta', 'La contraseña debe tener al menos 6 caracteres.');
+
+    // Validar que todos los criterios de contraseña se cumplen
+    const allCriteriaMet = meetsMinLength && hasLowercase && hasUppercase && hasQuestionMark;
+    if (!allCriteriaMet) {
+      Alert.alert('Contraseña Inválida', 'La contraseña no cumple con todos los criterios requeridos.');
       return;
     }
+
     try {
-      await register(name.trim(), email.trim(), password, selectedIconName); 
-      // La navegación se maneja automáticamente
+      await register(name.trim(), email.trim(), password, selectedIconName);
+      // Después del registro exitoso y envío de correo de verificación:
+      Alert.alert(
+        'Registro Exitoso',
+        '¡Bienvenido! Se ha enviado un correo de verificación a tu dirección. Por favor, verifica tu email para activar completamente tu cuenta.',
+        [{ text: 'OK', onPress: () => {} /* La navegación ya la maneja el observer de auth */ }]
+      );
     } catch (err) {
-      Alert.alert('Error de Registro', err.message || 'No se pudo completar el registro.');
+      let errorMessage = 'No se pudo completar el registro.';
+      if (err.code === 'auth/email-already-in-use') {
+        errorMessage = 'Este correo electrónico ya está registrado. Intenta iniciar sesión.';
+      } else if (err.code === 'auth/invalid-email') {
+        errorMessage = 'El formato del correo electrónico no es válido.';
+      } else if (err.code === 'auth/weak-password') {
+        // Aunque tenemos validación front-end, Firebase también tiene la suya.
+        errorMessage = 'La contraseña es demasiado débil.';
+      }
+      Alert.alert('Error de Registro', err.message || errorMessage);
     }
   };
 
@@ -115,16 +157,42 @@ export default function RegisterScreen({ navigation }) {
             <Ionicons name="lock-closed-outline" size={22} color={theme.placeholder} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Contraseña (mín. 6 caracteres)"
+              placeholder="Contraseña" // Placeholder genérico
               placeholderTextColor={theme.placeholder}
               secureTextEntry={!showPassword}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={handlePasswordChange} // Usar el nuevo handler
+              onFocus={() => setPasswordFocused(true)}
+              // onBlur={() => setPasswordFocused(false)} // Opcional: ocultar criterios al perder foco
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
               <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={24} color={theme.placeholder} />
             </TouchableOpacity>
           </View>
+
+          {/* Contenedor de criterios de contraseña */}
+          {(passwordFocused || password.length > 0) && ( // Mostrar si está enfocado o si ya hay texto
+            <Animatable.View animation="fadeIn" duration={300} style={styles.criteriaContainer}>
+              {passwordCriteria.map(criterion => (
+                <View key={criterion.key} style={styles.criterionRow}>
+                  <Ionicons
+                    name={criterion.met ? "checkmark-circle" : "ellipse-outline"} // close-circle-outline es muy rojo por defecto
+                    size={18}
+                    color={criterion.met ? (theme.success || 'green') : (theme.error || 'red')}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.criterionText,
+                      { color: criterion.met ? (theme.success || 'green') : theme.textSecondary }, // Verde si se cumple, color normal si no
+                    ]}
+                  >
+                    {criterion.label}
+                  </Text>
+                </View>
+              ))}
+            </Animatable.View>
+          )}
 
           <Text style={styles.label}>Elige tu avatar:</Text>
           <View style={styles.iconSelectorContainer}>
@@ -133,20 +201,18 @@ export default function RegisterScreen({ navigation }) {
                 key={icon.name}
                 style={[
                   styles.iconButton,
-                  selectedIconName === icon.name && styles.iconButtonSelected // Estilo para el icono seleccionado
+                  selectedIconName === icon.name && styles.iconButtonSelected
                 ]}
                 onPress={() => setSelectedIconName(icon.name)}
               >
                 <Ionicons 
                     name={icon.name} 
                     size={30} 
-                    color={selectedIconName === icon.name ? theme.primary : theme.textSecondary} // Color dinámico
+                    color={selectedIconName === icon.name ? theme.primary : theme.textSecondary}
                 />
               </TouchableOpacity>
             ))}
           </View>
-
-
           <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
             <Text style={styles.buttonTextPrimary}>Registrarse</Text>
           </TouchableOpacity>
@@ -161,6 +227,7 @@ export default function RegisterScreen({ navigation }) {
 }
 
 const getStyles = (theme) => StyleSheet.create({
+  // ... (todos tus estilos existentes) ...
   keyboardAvoidingContainer: {
     flex: 1,
     backgroundColor: theme.background,
@@ -277,20 +344,41 @@ const getStyles = (theme) => StyleSheet.create({
   iconSelectorContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'space-around', // O 'flex-start' para alinear a la izquierda
+    justifyContent: 'space-around',
     marginBottom: 20,
   },
   iconButton: {
     padding: 10,
-    borderRadius: 8, // Hacerlo más redondeado
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: theme.border, // Un borde sutil
-    margin: 5, // Espacio entre iconos
+    borderColor: theme.border,
+    margin: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconButtonSelected: {
-    borderColor: theme.primary, // Borde más prominente para el seleccionado
-    backgroundColor: theme.primaryLight, // Un color de fondo sutil
+    borderColor: theme.primary,
+    backgroundColor: theme.primaryLight,
   },
+  // NUEVOS ESTILOS PARA CRITERIOS DE CONTRASEÑA
+  criteriaContainer: {
+    marginTop: -5, // Para que esté más pegado al input de contraseña
+    marginBottom: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    // backgroundColor: theme.inputBackground, // Opcional: un fondo sutil
+    // borderRadius: 8, // Opcional
+  },
+  criterionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  criterionText: {
+    fontSize: 13, // Un poco más pequeño
+    // color: theme.textSecondary, // Color por defecto del texto del criterio
+    marginLeft: 0, // Ya hay margen en el icono
+  },
+  // No necesitamos 'criterionMetText' ya que cambiamos el color directamente en el style del Text
 });
+

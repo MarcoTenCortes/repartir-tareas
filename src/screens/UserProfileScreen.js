@@ -14,12 +14,12 @@ import {
 } from 'react-native';
 import * as Animatable from 'react-native-animatable';
 import { Ionicons } from '@expo/vector-icons';
-import { UserContext } from '../context/UserContext';
-import { useTheme } from '../context/ThemeContext';
-import { AVAILABLE_USER_ICONS, DEFAULT_ICON_NAME } from './RegisterScreen'; // Reutilizamos la lista de iconos
+import { UserContext } from '../context/UserContext'; // Asumiendo que UserContext está en ../context/UserContext
+import { useTheme } from '../context/ThemeContext'; // Asumiendo que ThemeContext está en ../context/ThemeContext
+import { AVAILABLE_USER_ICONS, DEFAULT_ICON_NAME } from './RegisterScreen';
 
 export default function UserProfileScreen({ navigation }) {
-  const { user, updateUserProfile, changeUserPassword, logout } = useContext(UserContext);
+  const { user, updateUserProfile, changeUserPassword, logout, deleteUserAccount } = useContext(UserContext); // Añadido deleteUserAccount
   const { theme } = useTheme();
   const styles = getStyles(theme);
 
@@ -78,13 +78,14 @@ export default function UserProfileScreen({ navigation }) {
           return;
         }
         await changeUserPassword(currentPassword, newPassword);
-        setCurrentPassword('');
+        // No limpiar contraseñas aquí para que puedan ser usadas por eliminar cuenta si es necesario,
+        // o limpiar solo newPassword y confirmNewPassword.
         setNewPassword('');
         setConfirmNewPassword('');
+        // setCurrentPassword(''); // No limpiar currentPassword aún
       }
       
       Alert.alert('Éxito', 'Perfil actualizado correctamente.');
-      // Opcional: navigation.goBack(); si quieres cerrar la pantalla tras guardar.
       
     } catch (err) {
       console.error("Error updating profile: ", err);
@@ -102,10 +103,10 @@ export default function UserProfileScreen({ navigation }) {
         { text: 'Cancelar', style: 'cancel' },
         {
           text: 'Cerrar Sesión',
-          style: 'destructive',
+          style: 'destructive', // Puedes cambiarlo si quieres que sea menos 'alarmante' que el de eliminar
           onPress: async () => {
             await logout();
-            navigation.navigate('Login'); // Asegurarse de que navega al login tras cerrar sesión
+            navigation.navigate('Login');
           },
         },
       ],
@@ -113,6 +114,52 @@ export default function UserProfileScreen({ navigation }) {
     );
   };
 
+  const handleDeleteUser = () => {
+    if (!currentPassword) {
+      Alert.alert(
+        'Contraseña Requerida', 
+        'Por favor, ingresa tu contraseña actual en el campo "Contraseña Actual" para poder eliminar tu cuenta.',
+        [{ text: 'OK' }]
+      );
+      setError('Se requiere la contraseña actual para eliminar la cuenta.');
+      return;
+    }
+
+    Alert.alert(
+      'Eliminar Cuenta Permanentemente',
+      '¿Estás absolutamente seguro de que quieres eliminar tu cuenta? Esta acción es irreversible y todos tus datos (perfil, grupos, tareas, etc.) serán eliminados permanentemente.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar Mi Cuenta',
+          style: 'destructive',
+          onPress: async () => {
+            setIsLoading(true);
+            setError(null);
+            try {
+              await deleteUserAccount(currentPassword);
+              // No es necesario llamar a logout() aquí si deleteUserAccount ya maneja el signOut
+              // y la limpieza del estado local del usuario en el contexto.
+              // Firebase deleteUser() ya hace signOut.
+              Alert.alert('Cuenta Eliminada', 'Tu cuenta ha sido eliminada exitosamente.');
+              setCurrentPassword(''); // Limpiar contraseña
+              setNewPassword('');
+              setConfirmNewPassword('');
+              navigation.navigate('Login');
+            } catch (err) {
+              console.error("Error deleting user account on screen: ", err);
+              setError(err.message || 'No se pudo eliminar la cuenta. Inténtalo de nuevo.');
+              // Errores específicos como 'auth/wrong-password' o 'auth/requires-recent-login' 
+              // son manejados y reformulados por deleteUserAccount en el contexto.
+            } finally {
+              setIsLoading(false);
+            }
+          },
+        },
+      ],
+      { cancelable: true }
+    );
+  };
 
   if (!user) {
     return (
@@ -129,7 +176,7 @@ export default function UserProfileScreen({ navigation }) {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <Animatable.View animation="fadeInDown" duration={600} style={styles.headerContainer}>
-          <Ionicons name="person-circle-outline" size={80} color={theme.primary} />
+          <Ionicons name={selectedIconName || "person-circle-outline"} size={80} color={theme.primary} />
           <Text style={styles.mainTitle}>Editar Perfil</Text>
         </Animatable.View>
 
@@ -148,7 +195,7 @@ export default function UserProfileScreen({ navigation }) {
             />
           </View>
 
-          <Text style={styles.label}>Cambiar Contraseña (dejar en blanco para no cambiar)</Text>
+          <Text style={styles.label}>Contraseña Actual (requerida para cambiar contraseña o eliminar cuenta)</Text>
           <View style={styles.inputContainer}>
             <Ionicons name="lock-closed-outline" size={20} color={theme.placeholder} style={styles.inputIcon} />
             <TextInput
@@ -157,12 +204,14 @@ export default function UserProfileScreen({ navigation }) {
               placeholderTextColor={theme.placeholder}
               secureTextEntry={!showCurrentPassword}
               value={currentPassword}
-              onChangeText={setCurrentPassword}
+              onChangeText={(text) => { setCurrentPassword(text); if(error) setError(null); }} // Limpiar error al escribir
             />
             <TouchableOpacity onPress={() => setShowCurrentPassword(!showCurrentPassword)} style={styles.eyeIcon}>
               <Ionicons name={showCurrentPassword ? "eye-off-outline" : "eye-outline"} size={22} color={theme.placeholder} />
             </TouchableOpacity>
           </View>
+
+          <Text style={styles.label}>Nueva Contraseña (dejar en blanco para no cambiar)</Text>
           <View style={styles.inputContainer}>
             <Ionicons name="lock-open-outline" size={20} color={theme.placeholder} style={styles.inputIcon} />
             <TextInput
@@ -216,9 +265,22 @@ export default function UserProfileScreen({ navigation }) {
             {isLoading ? <ActivityIndicator color={theme.textLight} /> : <Text style={styles.buttonTextPrimary}>Guardar Cambios</Text>}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.buttonSecondary} onPress={handleLogout}>
+          <TouchableOpacity 
+            style={[styles.buttonSecondary, isLoading && styles.buttonDisabled]} // Aplicar buttonDisabled también
+            onPress={handleLogout}
+            disabled={isLoading}
+          >
             <Text style={styles.buttonTextSecondary}>Cerrar Sesión</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.buttonDanger, isLoading && styles.buttonDisabled]} 
+            onPress={handleDeleteUser}
+            disabled={isLoading}
+          >
+            {isLoading ? <ActivityIndicator color={theme.textLightInverted || theme.textLight} /> : <Text style={styles.buttonTextDanger}>Eliminar Cuenta</Text>}
+          </TouchableOpacity>
+
         </Animatable.View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -303,7 +365,7 @@ const getStyles = (theme) => StyleSheet.create({
   },
   iconButtonSelected: {
     borderColor: theme.primary,
-    backgroundColor: theme.primaryLight, // Un color de fondo sutil para el seleccionado
+    backgroundColor: theme.primaryLight,
   },
   buttonPrimary: {
     backgroundColor: theme.primary,
@@ -314,23 +376,44 @@ const getStyles = (theme) => StyleSheet.create({
     minHeight: 50,
     justifyContent: 'center',
   },
-  buttonDisabled: {
-    backgroundColor: theme.border,
+  buttonDisabled: { // Estilo para deshabilitar botones
+    backgroundColor: theme.grey || theme.border, // Un color gris o el color del borde
+    opacity: 0.7,
   },
   buttonTextPrimary: {
     color: theme.textLight,
     fontSize: 16,
     fontWeight: 'bold',
   },
-  buttonSecondary: {
-    backgroundColor: theme.error, // Color distintivo para cerrar sesión
+  // Estilo modificado para Cerrar Sesión para que no sea rojo por defecto
+  buttonSecondary: { 
+    backgroundColor: 'transparent',
+    borderColor: theme.primary, // O un color menos prominente como theme.border
+    borderWidth: 1,
     paddingVertical: 15,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 15,
+    minHeight: 50,
+    justifyContent: 'center',
   },
   buttonTextSecondary: {
-    color: theme.textLight, // Texto claro para contraste
+    color: theme.primary, // O theme.textSecondary
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // Nuevo estilo para el botón de Eliminar Cuenta
+  buttonDanger: {
+    backgroundColor: theme.error, // Color rojo para acciones destructivas
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 15,
+    minHeight: 50,
+    justifyContent: 'center',
+  },
+  buttonTextDanger: {
+    color: theme.textLightInverted || theme.textLight, // Asegurar contraste con el fondo rojo
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -346,7 +429,7 @@ const getStyles = (theme) => StyleSheet.create({
       textAlign: 'center',
       marginTop: 50
   },
-  container: { // Estilo para el contenedor principal si el usuario no está logueado
+  container: { 
     flex: 1,
     backgroundColor: theme.background,
     justifyContent: 'center',
